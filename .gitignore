@@ -3,6 +3,9 @@
 client/node_modules/
 server/node_modules/
 
+client/env
+server/env
+
 # Build and dist folders
 client/build/
 client/dist/

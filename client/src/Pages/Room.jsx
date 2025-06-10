@@ -2,12 +2,38 @@ import React, { useEffect, useCallback, useState } from "react";
 import { FaMoon, FaSun, FaPhone, FaPaperPlane } from "react-icons/fa";
 import peer from "../Services/peer";
 import { useSocket } from "../useContext/SocketProvider";
+import { useParams } from "react-router-dom";
 
 const RoomPage = ({ darkMode, toggleDarkMode }) => {
+  const { roomId } = useParams();
   const socket = useSocket();
   const [remoteSocketId, setRemoteSocketId] = useState(null);
   const [myStream, setMyStream] = useState();
   const [remoteStream, setRemoteStream] = useState();
+
+
+  useEffect(() => {
+    if (!roomId || !socket.id) return;
+
+    socket.emit("room:check", {
+      roomId,
+      selfId: socket.id, // ✅ send your own socket ID
+    });
+
+    socket.on("room:user", (data) => {
+      if (data.exists) {
+        console.log("User present:", data.email, data.socketId,socket.id);
+        setRemoteSocketId(data.socketId); // this is the *other* user
+      } else {
+        console.log("No user present");
+      }
+    });
+
+    return () => {
+      socket.off("room:user");
+    };
+  }, [roomId, socket.id,socket]);
+
 
   const handleUserJoined = useCallback(({ email, id }) => {
     // console.log(`Email ${email} joined room`);
@@ -112,19 +138,17 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 
   return (
     <div
-      className={`min-h-screen transition-colors duration-500 ${
-        darkMode ? "bg-gray-900 text-gray-100" : "bg-white text-gray-900"
-      } max-w-5xl mx-auto p-6`}
+      className={`min-h-screen transition-colors duration-500 ${darkMode ? "bg-gray-900 text-gray-100" : "bg-white text-gray-900"
+        } max-w-5xl mx-auto p-6`}
     >
       {/* Dark/Light Mode Toggle */}
       <div className="flex justify-end mb-4">
         <button
           onClick={toggleDarkMode}
-          className={`p-2 rounded-md shadow-md focus:outline-none focus:ring-2 focus:ring-offset-2 ${
-            darkMode
-              ? "bg-yellow-400 text-gray-900 hover:bg-yellow-500 focus:ring-yellow-300"
-              : "bg-gray-800 text-white hover:bg-gray-700 focus:ring-gray-500"
-          } transition`}
+          className={`p-2 rounded-md shadow-md focus:outline-none focus:ring-2 focus:ring-offset-2 ${darkMode
+            ? "bg-yellow-400 text-gray-900 hover:bg-yellow-500 focus:ring-yellow-300"
+            : "bg-gray-800 text-white hover:bg-gray-700 focus:ring-gray-500"
+            } transition`}
           aria-label="Toggle Dark Mode"
           title="Toggle Dark Mode"
         >
@@ -133,7 +157,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
       </div>
 
       <h1 className="text-4xl font-bold mb-6 text-center">Room Page</h1>
-
+   
       <h4 className="text-lg mb-6 text-center">
         {remoteSocketId ? (
           <span className="text-green-400 font-semibold">Connected</span>
