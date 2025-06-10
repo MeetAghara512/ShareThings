@@ -22,7 +22,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 
     socket.on("room:user", (data) => {
       if (data.exists) {
-        console.log("User present:", data.email, data.socketId,socket.id);
+        console.log("User present:", data.email, data.socketId, socket.id);
         setRemoteSocketId(data.socketId); // this is the *other* user
       } else {
         console.log("No user present");
@@ -32,7 +32,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
     return () => {
       socket.off("room:user");
     };
-  }, [roomId, socket.id,socket]);
+  }, [roomId, socket.id, socket]);
 
 
   const handleUserJoined = useCallback(({ email, id }) => {
@@ -41,10 +41,15 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
   }, []);
 
   const handleCallUser = useCallback(async () => {
-    const stream = await navigator.mediaDevices.getDisplayMedia({
+    const stream = await navigator.mediaDevices.getUserMedia({
       audio: true,
-      video: true,
+      video: {
+        facingMode: "user", // Uses front camera on mobile
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+      },
     });
+
     const offer = await peer.getOffer();
     socket.emit("user:call", { to: remoteSocketId, offer });
     setMyStream(stream);
@@ -53,10 +58,15 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
   const handleIncomingCall = useCallback(
     async ({ from, offer }) => {
       setRemoteSocketId(from);
-      const stream = await navigator.mediaDevices.getDisplayMedia({
+      const stream = await navigator.mediaDevices.getUserMedia({
         audio: true,
-        video: true,
+        video: {
+          facingMode: "user", // Uses front camera on mobile
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
       });
+
       setMyStream(stream);
       // console.log("Incoming Call", from, offer);
       const ans = await peer.getAnswer(offer);
@@ -157,7 +167,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
       </div>
 
       <h1 className="text-4xl font-bold mb-6 text-center">Room Page</h1>
-   
+
       <h4 className="text-lg mb-6 text-center">
         {remoteSocketId ? (
           <span className="text-green-400 font-semibold">Connected</span>
