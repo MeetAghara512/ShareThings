@@ -1,5 +1,5 @@
 import React, { useEffect, useCallback, useState } from "react";
-import { FaMoon, FaSun, FaPhone, FaPaperPlane } from "react-icons/fa";
+import { FaMoon, FaSun, FaPhone } from "react-icons/fa";
 import peer from "../Services/peer";
 import { useSocket } from "../useContext/SocketProvider";
 import { useParams } from "react-router-dom";
@@ -34,31 +34,27 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 
   const handleCallUser = useCallback(async () => {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+    setMyStream(stream);
+    stream.getTracks().forEach((track) => peer.peer.addTrack(track, stream));
     const offer = await peer.getOffer();
     socket.emit("user:call", { to: remoteSocketId, offer });
-    setMyStream(stream);
   }, [remoteSocketId, socket]);
 
   const handleIncomingCall = useCallback(
     async ({ from, offer }) => {
       setRemoteSocketId(from);
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true }); //
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });  // getDisplayMedia
       setMyStream(stream);
+      stream.getTracks().forEach((track) => peer.peer.addTrack(track, stream));
       const ans = await peer.getAnswer(offer);
       socket.emit("call:accepted", { to: from, ans });
     },
     [socket]
   );
 
-  const sendStreams = useCallback(() => {
-    if (!peer.peer || !myStream) return;
-    myStream.getTracks().forEach((track) => peer.peer.addTrack(track, myStream));
-  }, [myStream]);
-
   const handleCallAccepted = useCallback(({ ans }) => {
     peer.setLocalDescription(ans);
-    sendStreams();
-  }, [sendStreams]);
+  }, []);
 
   const handleNegoNeeded = useCallback(async () => {
     const offer = await peer.getOffer();
@@ -103,15 +99,14 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 
   return (
     <div className={`min-h-screen w-full flex flex-col transition-colors duration-500 ${darkMode ? "bg-zinc-900 text-white" : "bg-gray-100 text-gray-900"}`}>
-      
-      <div className="flex justify-between items-center p-4 shadow-md">
+      <div className="flex justify-between items-center p-4 shadow-md border-b border-gray-300">
         <h2 className="text-xl font-bold">Video Call Room</h2>
-        <button onClick={toggleDarkMode} className="rounded-full p-2 transition-all hover:scale-110">
+        <button onClick={toggleDarkMode} className="rounded-full p-2 transition hover:scale-110">
           {darkMode ? <FaSun size={20} /> : <FaMoon size={20} />}
         </button>
       </div>
 
-      <div className="flex flex-col items-center justify-center flex-grow px-4 py-2">
+      <div className="flex flex-col items-center justify-center flex-grow px-4 py-6">
         <div className="mb-4 text-center">
           <p className="text-lg">
             {remoteSocketId ? (
@@ -151,22 +146,22 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 
         <div className="mt-6 flex gap-4 flex-wrap justify-center">
           {remoteSocketId && !myStream && (
-            <button onClick={handleCallUser} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-full shadow-md flex items-center gap-2">
+            <button
+              onClick={handleCallUser}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-full shadow-md flex items-center gap-2"
+            >
               <FaPhone />
               Call
             </button>
           )}
           {myStream && (
-            <>
-              <button onClick={sendStreams} className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-full shadow-md flex items-center gap-2">
-                <FaPaperPlane />
-                Send Stream
-              </button>
-              <button onClick={handleCutCall} className="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-full shadow-md flex items-center gap-2">
-                <FaPhone />
-                End Call
-              </button>
-            </>
+            <button
+              onClick={handleCutCall}
+              className="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-full shadow-md flex items-center gap-2"
+            >
+              <FaPhone />
+              End Call
+            </button>
           )}
         </div>
       </div>
