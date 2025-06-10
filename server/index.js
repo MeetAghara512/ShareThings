@@ -1,8 +1,16 @@
 const { Server } = require("socket.io");
 
-const io = new Server(8000, {
-	cors: true,
+// const io = new Server(8000, {
+// 	cors: true,
+// });
+const PORT = process.env.PORT || 8000;
+const io = new Server(PORT, {
+  cors: {
+    origin: "*", 
+    methods: ["GET", "POST"],
+  }
 });
+
 
 const emailToSocketIdMap = new Map();
 const socketidToEmailMap = new Map();
