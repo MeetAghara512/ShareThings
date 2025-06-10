@@ -42,7 +42,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
   const handleIncomingCall = useCallback(
     async ({ from, offer }) => {
       setRemoteSocketId(from);
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true }); //
       setMyStream(stream);
       const ans = await peer.getAnswer(offer);
       socket.emit("call:accepted", { to: from, ans });
