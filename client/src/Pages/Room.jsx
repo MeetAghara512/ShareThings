@@ -3,14 +3,27 @@ import { FaMoon, FaSun, FaPhone, FaPaperPlane } from "react-icons/fa";
 import peer from "../Services/peer";
 import { useSocket } from "../useContext/SocketProvider";
 import { useParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
+
 
 const RoomPage = ({ darkMode, toggleDarkMode }) => {
   const { roomId } = useParams();
   const socket = useSocket();
+  const navigate = useNavigate();
   const [remoteSocketId, setRemoteSocketId] = useState(null);
   const [myStream, setMyStream] = useState();
   const [remoteStream, setRemoteStream] = useState();
 
+
+
+  const handleCutCall = () => {
+    if (myStream) {
+      myStream.getTracks().forEach((track) => track.stop()); // Stop media stream
+    }
+
+    socket.disconnect(); // Optional: disconnect socket
+    navigate("/"); // Redirect to home
+  };
 
   useEffect(() => {
     if (!roomId || !socket.id) return;
@@ -190,16 +203,29 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
           </button>
         )}
         {myStream && (
-          <button
-            onClick={sendStreams}
-            className="bg-green-600 hover:bg-green-700 active:scale-95 transform transition duration-200
-              text-white font-medium py-2 px-6 rounded-md shadow-md flex items-center space-x-2"
-            title="Send Stream"
-            aria-label="Send Stream"
-          >
-            <FaPaperPlane />
-            <span>Send Stream</span>
-          </button>
+          <>
+            <button
+              onClick={sendStreams}
+              className="bg-green-600 hover:bg-green-700 active:scale-95 transform transition duration-200
+            text-white font-medium py-2 px-6 rounded-md shadow-md flex items-center space-x-2"
+              title="Send Stream"
+              aria-label="Send Stream"
+            >
+              <FaPaperPlane />
+              <span>Send Stream</span>
+            </button>
+            <button
+              onClick={handleCutCall}
+              className="bg-red-600 hover:bg-red-700 active:scale-95 transform transition duration-200
+    text-white font-medium py-2 px-6 rounded-md shadow-md flex items-center space-x-2"
+              title="Cut Call"
+              aria-label="Cut Call"
+            >
+              <FaPhone />
+              <span>Cut Call</span>
+            </button>
+
+          </>
         )}
       </div>
 
