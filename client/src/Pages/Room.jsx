@@ -33,7 +33,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
   }, []);
 
   const handleCallUser = useCallback(async () => {
-    const stream = await navigator.mediaDevices.getDisplayMedia({ audio: true, video: true });
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
     setMyStream(stream);
     stream.getTracks().forEach((track) => peer.peer.addTrack(track, stream));
     const offer = await peer.getOffer();
@@ -43,7 +43,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
   const handleIncomingCall = useCallback(
     async ({ from, offer }) => {
       setRemoteSocketId(from);
-      const stream = await navigator.mediaDevices.getDisplayMedia({ audio: true, video: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
       setMyStream(stream);
       stream.getTracks().forEach((track) => peer.peer.addTrack(track, stream));
       const ans = await peer.getAnswer(offer);
