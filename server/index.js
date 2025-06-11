@@ -23,8 +23,8 @@ io.on("connection", (socket) => {
 		const room = io.sockets.adapter.rooms.get(roomId);
 
 		if (room && room.size > 1) {
-			const otherSocketIds = [...room].filter(id => id !== selfId); // exclude self
-			const existingSocketId = otherSocketIds[0]; // get one other user
+			const otherSocketIds = [...room].filter(id => id !== selfId); 
+			const existingSocketId = otherSocketIds[0]; 
 			const existingEmail = socketidToEmailMap.get(existingSocketId);
 
 			socket.emit("room:user", {
