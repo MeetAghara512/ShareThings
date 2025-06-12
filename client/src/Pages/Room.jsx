@@ -1,5 +1,5 @@
 import React, { useEffect, useCallback, useRef, useState } from "react";
-import { FaMoon, FaSun, FaPhone, FaDesktop, FaVideo } from "react-icons/fa";
+import { FaMoon, FaSun, FaPhone, FaDesktop, FaVideo, FaMicrophone, FaMicrophoneSlash } from "react-icons/fa";
 import peer from "../Services/peer";
 import { useSocket } from "../useContext/SocketProvider";
 import { useParams } from "react-router-dom";
@@ -14,6 +14,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 
   // ▶️ Start with screen share
   const [isScreen, setIsScreen] = useState(false);
+  const [muted, setMuted] = useState(false);
 
   const myStreamRef = useRef(null);
   const tracksAddedRef = useRef(false);
@@ -155,6 +156,14 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
     }
   }, [isScreen]);
 
+  // Toggle mic on/off
+  const handleToggleMic = () => {
+    if (!myStreamRef.current) return;
+    const enabled = !muted;
+    myStreamRef.current.getAudioTracks().forEach(track => track.enabled = enabled);
+    setMuted(!muted);
+  };
+
   return (
     <div className={`min-h-screen flex flex-col ${darkMode ? "bg-zinc-900 text-white" : "bg-gray-100 text-gray-900"}`}>
       <header className="flex justify-between items-center p-4 shadow border-b">
@@ -214,6 +223,14 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
               </button>
 
               <button
+                onClick={handleToggleMic}
+                className="bg-gray-700 text-white px-4 py-2 rounded-full flex items-center gap-2"
+              >
+                {muted ? <FaMicrophoneSlash /> : <FaMicrophone />} 
+                {muted ? "Unmute" : "Mute"}
+              </button>
+
+              <button
                 onClick={handleCutCall}
                 className="bg-red-600 text-white px-6 py-2 rounded-full flex items-center gap-2"
               >
@@ -227,4 +244,4 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
   );
 };
 
-export default RoomPage; //dev
+export default RoomPage;
