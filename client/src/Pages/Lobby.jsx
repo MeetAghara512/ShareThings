@@ -33,27 +33,45 @@ const Lobby = ({ darkMode, toggleDarkMode }) => {
 	}, [socket, handleJoinRoom]);
 
 	return (
-		<div className={`min-h-screen w-full flex flex-col transition-colors duration-500 ${darkMode ? "bg-zinc-900 text-white" : "bg-gray-100 text-gray-900"}`}>
-		
-			<div className="flex justify-between items-center p-4 shadow-md">
-				<h2 className="text-xl font-bold">MeetVerse</h2>
-				<button onClick={toggleDarkMode} className="rounded-full p-2 transition-all hover:scale-110">
-					{darkMode ? <FaSun size={20} /> : <FaMoon size={20} />}
-				</button>
-			</div>
+		<div
+			className={`min-h-screen w-full flex flex-col transition-colors duration-500 ` +
+				(darkMode
+					? "bg-gradient-to-br from-zinc-900 to-black text-white"
+					: "bg-gradient-to-br from-gray-100 to-gray-200 text-gray-900")
+			}
+		>
+			<header className="flex justify-between items-center p-5 shadow border-b">
+						<h2 className="text-2xl font-extrabold bg-gradient-to-r from-indigo-400 via-purple-500 to-pink-500 bg-clip-text text-transparent transition duration-300 hover:from-pink-500 hover:to-indigo-400">
+							ShareThings
+						</h2>
+						<button
+							onClick={toggleDarkMode}
+							className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition duration-300"
+						>
+							{darkMode ? <FaSun size={20} /> : <FaMoon size={20} />}
+						</button>
+					</header>
 
-			<div className="flex flex-col items-center justify-center px-4 py-12 sm:py-20">
-				<h2 className={`text-4xl font-extrabold mb-8 text-center ${darkMode ? "text-indigo-300" : "text-indigo-600"}`}>
+
+			<main className="flex-grow flex flex-col items-center justify-center px-6 py-12 sm:py-20">
+				<h2
+					className={`text-5xl font-extrabold mb-10 text-center transition-colors duration-500 ` +
+						(darkMode ? "text-indigo-300" : "text-indigo-600")
+					}
+				>
 					Join a Video Call Room
 				</h2>
 
 				<form
 					onSubmit={handleSubmit}
-					className={`w-full max-w-md px-6 py-8 rounded-xl shadow-2xl space-y-6 ${darkMode ? "bg-gray-800 text-gray-100" : "bg-white text-gray-900"
-						}`}
+					className={`w-full max-w-lg px-8 py-10 rounded-2xl shadow-2xl space-y-8 transition-transform duration-300 hover:scale-105 ` +
+						(darkMode
+							? "bg-gray-800 text-gray-100"
+							: "bg-white text-gray-900")
+					}
 				>
-					<div>
-						<label htmlFor="email" className="block text-sm font-medium mb-2">
+					<div className="space-y-2">
+						<label htmlFor="email" className="block text-sm font-medium">
 							Your Email
 						</label>
 						<input
@@ -63,15 +81,16 @@ const Lobby = ({ darkMode, toggleDarkMode }) => {
 							placeholder="you@example.com"
 							value={email}
 							onChange={(e) => setEmail(e.target.value)}
-							className={`w-full px-4 py-2 rounded-md border focus:outline-none focus:ring-2 text-sm ${darkMode
-									? "bg-gray-700 border-gray-600 focus:ring-indigo-400 text-gray-100"
-									: "border-gray-300 focus:ring-indigo-500"
-								}`}
+							className={`w-full px-4 py-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-indigo-400 transition-all duration-300 text-sm ` +
+								(darkMode
+									? "bg-gray-700 border-gray-600 placeholder-gray-400 focus:border-indigo-500"
+									: "border-gray-300 placeholder-gray-500 focus:border-indigo-600 hover:border-indigo-400")
+							}
 						/>
 					</div>
 
-					<div>
-						<label htmlFor="room" className="block text-sm font-medium mb-2">
+					<div className="space-y-2">
+						<label htmlFor="room" className="block text-sm font-medium">
 							Room Number
 						</label>
 						<input
@@ -81,23 +100,24 @@ const Lobby = ({ darkMode, toggleDarkMode }) => {
 							placeholder="Enter room ID"
 							value={room}
 							onChange={(e) => setRoom(e.target.value)}
-							className={`w-full px-4 py-2 rounded-md border focus:outline-none focus:ring-2 text-sm ${darkMode
-									? "bg-gray-700 border-gray-600 focus:ring-indigo-400 text-gray-100"
-									: "border-gray-300 focus:ring-indigo-500"
-								}`}
+							className={`w-full px-4 py-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-indigo-400 transition-all duration-300 text-sm ` +
+								(darkMode
+									? "bg-gray-700 border-gray-600 placeholder-gray-400 focus:border-indigo-500"
+									: "border-gray-300 placeholder-gray-500 focus:border-indigo-600 hover:border-indigo-400")
+							}
 						/>
 					</div>
 
 					<button
 						type="submit"
-						className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2.5 rounded-md transition-all"
+						className="w-full py-3 rounded-lg bg-indigo-600 text-white font-semibold text-lg transition-transform duration-300 hover:bg-indigo-700 hover:-translate-y-1 hover:shadow-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
 					>
 						Join Room
 					</button>
 				</form>
-			</div>
+			</main>
 		</div>
 	);
 };
 
-export default Lobby; //main
+export default Lobby;
