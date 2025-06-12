@@ -13,7 +13,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	const [remoteStream, setRemoteStream] = useState(null);
 
 	const [isScreen, setIsScreen] = useState(false);
-	const [muted, setMuted] = useState(false);
+	const [muted, setMuted] = useState(true);
 
 	const myStreamRef = useRef(null);
 	const tracksAddedRef = useRef(false);
@@ -258,8 +258,8 @@ return (
 							onClick={handleToggleMic}
 							className="bg-gray-700 hover:bg-gray-600 text-white px-5 py-2 rounded-full flex items-center gap-2 shadow-sm transition-transform hover:-translate-y-1"
 						>
-							{muted ? <FaMicrophoneSlash /> : <FaMicrophone />}
-							{muted ? "Unmute" : "Mute"}
+							{!muted ? <FaMicrophoneSlash /> : <FaMicrophone />}
+							{!muted ? "Unmute" : "Mute"}
 						</button>
 
 						<button

@@ -5,7 +5,7 @@ import Room from './Pages/Room';
 import { useState } from 'react';
 
 function App() {
-	const [darkMode, setDarkMode] = useState(false);
+	const [darkMode, setDarkMode] = useState(true);
 
 	const toggleDarkMode = () => setDarkMode(prev => !prev);
 
