@@ -6,9 +6,9 @@ Tired of complex video platforms and unreliable connections? **shareThings** bri
 
 ## 🔗 Live Demo
 
-**shareThings** is deployed on Render and available here:
+**shareThings** is deployed and available here:
 
-> 🔗 **Live Website:** [shareThings on Render](https://sharethings.onrender.com)
+> 🔗 **Live Website:** [shareThings Web](https://sharethings.onrender.com)
 
 ---
 
@@ -37,8 +37,6 @@ Tired of complex video platforms and unreliable connections? **shareThings** bri
 
 ## ⚡ Quick Start
 
-### Prerequisites
-- Node.js v14+ and npm installed
 
 ### Clone & Install
 
@@ -58,37 +56,32 @@ ShareThings/
 Install dependencies:
 ```bash
 # Backend setup
-dd server && npm install
+cd server && npm install
 
 # Frontend setup
-cd ../client && npm install
+cd client && npm install
 ```
 
 Ensure you have set any required environment variables for the backend (e.g., `PORT`, `STUN_SERVERS`, `TURN_SERVERS`) in `/server/.env`.
 
-### Run Locally
-
-```bash
-# Start signaling server
-cd server && npm run dev
-
-# Start React app
-cd ../client && npm run start
-```
-
 ---
 
 ## 📸 Screenshots
-
+### Home Page
 <p align="center">
-  <img src="./docs/homepage.png" alt="Home Page" width="45%" />
-  <img src="./docs/video-call.png" alt="Video Call" width="45%" />
+  <img src="./Pictures/one.png" alt="Home Page" width="70%" />
 </p>
 
+### Wait for Connection
 <p align="center">
-  <img src="./docs/screen-sharing.png" alt="Screen Sharing" width="45%" />
-  <img src="./docs/peer-setup.png" alt="Peer Setup" width="45%" />
+  <img src="./Pictures/two.png" alt="Wait for Connection" width="70%" />
 </p>
+
+### Connected (Mobile View)
+<p align="center">
+  <img src="./Pictures/three.jpg" alt="Connected Mobile View" width="30%" height="40%" />
+</p>
+
 
 ---
 
