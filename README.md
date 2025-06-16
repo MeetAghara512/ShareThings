@@ -8,7 +8,7 @@ Tired of complex video platforms and unreliable connections? **shareThings** bri
 
 **shareThings** is deployed and available here:
 
-> 🔗 **Live Website:** [shareThings Web](https://sharethings.onrender.com)
+> 🔗 **Live Website:** [shareThings Web](https://sharethings-web.onrender.com/)
 
 ---
 
