@@ -69,12 +69,12 @@ Ensure you have set any required environment variables for the backend (e.g., `P
 ## 📸 Screenshots
 ### Home Page
 <p align="center">
-  <img src="./Pictures/one.png" alt="Home Page" width="70%" />
+  <img src="./Pictures/one.png" alt="Home Page" width="100%" />
 </p>
 
 ### Wait for Connection
 <p align="center">
-  <img src="./Pictures/two.png" alt="Wait for Connection" width="70%" />
+  <img src="./Pictures/two.png" alt="Wait for Connection" width="100%" />
 </p>
 
 ### Connected (Mobile View)
