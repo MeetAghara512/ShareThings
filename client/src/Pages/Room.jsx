@@ -12,7 +12,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	const [myStream, setMyStream] = useState(null);
 	const [remoteStream, setRemoteStream] = useState(null);
 
-	const [isScreen, setIsScreen] = useState(true);
+	const [isScreen, setIsScreen] = useState(false);
 	const [muted, setMuted] = useState(true);
 
 	const myStreamRef = useRef(null);
