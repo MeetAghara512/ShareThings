@@ -1,9 +1,10 @@
 const { Server } = require("socket.io");
 
-const PORT = process.env.PORT || 8000;
+const PORT = process.env.PORT || 5000;
 const io = new Server(PORT, {
   cors: {
-    origin: "*", 
+    origin: ["https://sharethings-web.onrender.com", 
+		"http://localhost:3000" ],   
     methods: ["GET", "POST"],
   }
 });
@@ -20,6 +21,7 @@ io.on("connection", (socket) => {
 		socket.join(room);
 		io.to(room).emit("user:joined", { email, id: socket.id });
 		io.to(socket.id).emit("room:join", data);
+		// console.log("someone");
 	});
 
 
