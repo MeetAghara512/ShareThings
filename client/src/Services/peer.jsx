@@ -19,11 +19,11 @@ class PeerService {
 				]
 			});
 
-			this.peer.onicecandidate = (event) => {
-				if (event.candidate) {
-					console.log("🧊 ICE Candidate:", event.candidate.candidate);
-				}
-			};
+			// this.peer.onicecandidate = (event) => {
+			// 	if (event.candidate) {
+			// 		// console.log("🧊 ICE Candidate:", event.candidate.candidate);
+			// 	}
+			// };
 		}
 	}
 
