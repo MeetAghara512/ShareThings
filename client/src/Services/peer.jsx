@@ -6,9 +6,14 @@ class PeerService {
 					{
 						urls: [
 							"stun:stun.l.google.com:19302",
-							"stun:global.stun.twilio.com:3478",
+							"stun:global.stun.twilio.com:3478"
 						],
 					},
+					{
+						urls: "turn:relay1.expressturn.com:3478",
+						username: "efault",
+						credential: "turnpassword"
+					}
 				],
 			});
 		}
