@@ -5,38 +5,25 @@ class PeerService {
 				iceServers: [
 					{ urls: "stun:ss-turn1.xirsys.com" },
 					{
-						urls: "turn:ss-turn1.xirsys.com:80?transport=udp",
-						username: "qeCgZhvP0DbDxsICsy69Q6OyDijhk7lsJagKXqyMHA2zYrq70yq1CZwMLS_QCkApAAAAAGhuowhNZWV0QWdoYXJh",
-						credential: "eb7c701e-5ce7-11f0-8e34-0242ac140004"
-					},
-					{
-						urls: "turn:ss-turn1.xirsys.com:3478?transport=udp",
-						username: "qeCgZhvP0DbDxsICsy69Q6OyDijhk7lsJagKXqyMHA2zYrq70yq1CZwMLS_QCkApAAAAAGhuowhNZWV0QWdoYXJh",
-						credential: "eb7c701e-5ce7-11f0-8e34-0242ac140004"
-					},
-					{
-						urls: "turn:ss-turn1.xirsys.com:80?transport=tcp",
-						username: "qeCgZhvP0DbDxsICsy69Q6OyDijhk7lsJagKXqyMHA2zYrq70yq1CZwMLS_QCkApAAAAAGhuowhNZWV0QWdoYXJh",
-						credential: "eb7c701e-5ce7-11f0-8e34-0242ac140004"
-					},
-					{
-						urls: "turn:ss-turn1.xirsys.com:3478?transport=tcp",
-						username: "qeCgZhvP0DbDxsICsy69Q6OyDijhk7lsJagKXqyMHA2zYrq70yq1CZwMLS_QCkApAAAAAGhuowhNZWV0QWdoYXJh",
-						credential: "eb7c701e-5ce7-11f0-8e34-0242ac140004"
-					},
-					{
-						urls: "turns:ss-turn1.xirsys.com:443?transport=tcp",
-						username: "qeCgZhvP0DbDxsICsy69Q6OyDijhk7lsJagKXqyMHA2zYrq70yq1CZwMLS_QCkApAAAAAGhuowhNZWV0QWdoYXJh",
-						credential: "eb7c701e-5ce7-11f0-8e34-0242ac140004"
-					},
-					{
-						urls: "turns:ss-turn1.xirsys.com:5349?transport=tcp",
+						urls: [
+							"turn:ss-turn1.xirsys.com:80?transport=udp",
+							"turn:ss-turn1.xirsys.com:3478?transport=udp",
+							"turn:ss-turn1.xirsys.com:80?transport=tcp",
+							"turn:ss-turn1.xirsys.com:3478?transport=tcp",
+							"turns:ss-turn1.xirsys.com:443?transport=tcp",
+							"turns:ss-turn1.xirsys.com:5349?transport=tcp"
+						],
 						username: "qeCgZhvP0DbDxsICsy69Q6OyDijhk7lsJagKXqyMHA2zYrq70yq1CZwMLS_QCkApAAAAAGhuowhNZWV0QWdoYXJh",
 						credential: "eb7c701e-5ce7-11f0-8e34-0242ac140004"
 					}
 				]
-
 			});
+
+			this.peer.onicecandidate = (event) => {
+				if (event.candidate) {
+					console.log("🧊 ICE Candidate:", event.candidate.candidate);
+				}
+			};
 		}
 	}
 
