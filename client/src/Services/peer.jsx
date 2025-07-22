@@ -13,8 +13,8 @@ class PeerService {
 							"turns:ss-turn1.xirsys.com:443?transport=tcp",
 							"turns:ss-turn1.xirsys.com:5349?transport=tcp"
 						],
-						username: "qeCgZhvP0DbDxsICsy69Q6OyDijhk7lsJagKXqyMHA2zYrq70yq1CZwMLS_QCkApAAAAAGhuowhNZWV0QWdoYXJh",
-						credential: "eb7c701e-5ce7-11f0-8e34-0242ac140004"
+						username: "",
+						credential: ""
 					}
 				]
 			});
