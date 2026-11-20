@@ -62,7 +62,7 @@ cd server && npm install
 cd client && npm install
 ```
 
-Ensure you have set any required environment variables for the backend (e.g., `PORT`, `STUN_SERVERS`, `TURN_SERVERS`) in `/server/.env`.
+Backend environment variables: `PORT` (default `5000`) and, for TURN relay on strict networks, your Xirsys account's `XIRSYS_IDENT`, `XIRSYS_SECRET` and `XIRSYS_CHANNEL`. Without them the app falls back to STUN only.
 
 ---
 
