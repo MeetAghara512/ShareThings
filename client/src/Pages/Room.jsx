@@ -12,6 +12,9 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	const [remoteSocketId, setRemoteSocketId] = useState(null);
 	const [myStream, setMyStream] = useState(null);
 	const [remoteStream, setRemoteStream] = useState(null);
+	const [remoteName, setRemoteName] = useState(null);
+	// Display name chosen on the Lobby (same key as Lobby.jsx)
+	const myName = localStorage.getItem("sharethings.name");
 
 	const [isScreen, setIsScreen] = useState(false);
 	const [muted, setMuted] = useState(false);
@@ -39,18 +42,24 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 
 	// Join the room; the server replies with who is already there and the ICE servers to use
 	const joinRoom = useCallback(() => {
-		socket.emit("room:join", { room: roomId }, ({ full, peerId, iceServers }) => {
+		socket.emit("room:join", { room: roomId, name: myName }, ({ full, peerId, peerName, iceServers }) => {
 			if (full) {
 				alert("This room is full.");
 				return navigate("/");
 			}
 			peer.reset(iceServers);
 			setRemoteSocketId(peerId);
+			setRemoteName(peerName);
 		});
-	}, [socket, roomId, navigate]);
+	}, [socket, roomId, myName, navigate]);
 
 	// Leaving the page (e.g. browser Back) frees the camera, the connection and our place in the room
 	useEffect(() => {
+		// Room link opened without a name: ask for it on the Lobby first, which sends the user back here
+		if (!myName) {
+			navigate(`/?room=${encodeURIComponent(roomId)}`, { replace: true });
+			return;
+		}
 		joinRoom();
 		return () => {
 			myStreamRef.current?.getTracks().forEach(t => t.stop());
@@ -58,7 +67,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 			peer.reset();
 			socket.emit("room:leave", { room: roomId });
 		};
-	}, [joinRoom, socket, roomId]);
+	}, [joinRoom, socket, roomId, myName, navigate]);
 
 	// Send our ICE candidates to the other user and show their media when it arrives
 	useEffect(() => {
@@ -66,8 +75,9 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		peer.onTrack = setRemoteStream;
 	}, [socket, remoteSocketId]);
 
-	const handleUserJoined = useCallback(({ id }) => {
+	const handleUserJoined = useCallback(({ id, name }) => {
 		setRemoteSocketId(id);
+		setRemoteName(name);
 	}, []);
 
 	// Call is over (other user left or our signaling dropped): back to a clean waiting state
@@ -77,6 +87,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		setMyStream(null);
 		setRemoteStream(null);
 		setRemoteSocketId(null);
+		setRemoteName(null);
 		setIsScreen(false);
 		setMuted(false);
 		callingRef.current = false;
@@ -177,6 +188,8 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		setMuted(!muted);
 	};
 
+if (!myName) return null; // being redirected to the Lobby
+
 return (
 	<div className={`min-h-screen flex flex-col transition-colors duration-500 ${darkMode ? "bg-zinc-900 text-white" : "bg-gray-100 text-gray-900"}`}>
 		<header className="flex justify-between items-center p-5 shadow border-b">
@@ -229,8 +242,8 @@ return (
 					</button>
 					</div>
 				) : (
-					<div className="px-4 py-2 rounded-full bg-green-100 text-green-800 font-semibold text-sm shadow inline-block">
-						You are now connected! Enjoy your call 🎉
+					<div className="px-4 py-2 rounded-full bg-green-100 text-green-800 font-semibold text-sm shadow inline-block max-w-full truncate">
+						In a call with {remoteName}
 					</div>
 				)}
 			</div>
@@ -244,6 +257,11 @@ return (
 						ref={(v) => v && (v.srcObject = remoteStream)}
 					/>
 				)}
+				{remoteStream && remoteName && (
+					<span className="absolute bottom-4 left-4 max-w-[calc(100%-12rem)] truncate px-2 py-1 rounded bg-black/60 text-white text-sm">
+						{remoteName}
+					</span>
+				)}
 				{myStream && (
 					<div className="absolute bottom-4 right-4 w-36 h-28 border-white border-2 rounded-lg overflow-hidden shadow-md">
 						<video
@@ -253,6 +271,7 @@ return (
 							className="w-full h-full object-cover"
 							ref={(v) => v && (v.srcObject = myStream)}
 						/>
+						<span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-black/60 text-white text-xs">You</span>
 					</div>
 				)}
 			</div>
