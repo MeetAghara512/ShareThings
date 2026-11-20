@@ -1,5 +1,5 @@
 import React, { useEffect, useCallback, useRef, useState } from "react";
-import { FaMoon, FaSun, FaPhone, FaDesktop, FaVideo, FaMicrophone, FaMicrophoneSlash } from "react-icons/fa";
+import { FaMoon, FaSun, FaPhone, FaDesktop, FaVideo, FaMicrophone, FaMicrophoneSlash, FaLink, FaCheck } from "react-icons/fa";
 import peer from "../Services/peer";
 import { useSocket } from "../useContext/SocketProvider";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
@@ -16,6 +16,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 
 	const [isScreen, setIsScreen] = useState(false);
 	const [muted, setMuted] = useState(false);
+	const [copied, setCopied] = useState(false);
 
 	const myStreamRef = useRef(null);
 	const callingRef = useRef(false);
@@ -24,6 +25,17 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		if (myStreamRef.current) myStreamRef.current.getTracks().forEach(t => t.stop());
 		socket.disconnect();
 		window.location.href = "/";
+	};
+
+	const handleCopyLink = async () => {
+		const link = window.location.href;
+		try {
+			await navigator.clipboard.writeText(link);
+			setCopied(true);
+			setTimeout(() => setCopied(false), 2000);
+		} catch {
+			window.prompt("Copy this link:", link);
+		}
 	};
 
 	// Join the room; the server replies with who is already there and the ICE servers to use
@@ -183,6 +195,7 @@ return (
 		<main className="flex-grow flex flex-col items-center justify-center p-6">
 			<div className="mb-6 text-center">
 				{!remoteSocketId ? (
+					<div className="flex flex-col items-center gap-4">
 					<div className="flex items-center justify-center gap-3">
 						<svg
 							className="animate-spin h-6 w-6 text-indigo-500"
@@ -207,6 +220,14 @@ return (
 						<span className="text-indigo-500 font-medium text-lg animate-pulse">
 							Waiting for the other participant to join...
 						</span>
+					</div>
+					<button
+						onClick={handleCopyLink}
+						className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-full flex items-center gap-2 shadow-sm transition-colors"
+					>
+						{copied ? <FaCheck /> : <FaLink />}
+						{copied ? "Link copied!" : "Copy invite link"}
+					</button>
 					</div>
 				) : (
 					<div className="px-4 py-2 rounded-full bg-green-100 text-green-800 font-semibold text-sm shadow inline-block">

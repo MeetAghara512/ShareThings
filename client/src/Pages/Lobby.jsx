@@ -10,7 +10,9 @@ const Lobby = ({ darkMode, toggleDarkMode }) => {
 	const handleSubmit = useCallback(
 		(e) => {
 			e.preventDefault();
-			navigate(`/room/${encodeURIComponent(room)}`, { state: { email } });
+			// No room entered: create a new one with a random ID
+			const roomId = room.trim() || crypto.randomUUID().slice(0, 8);
+			navigate(`/room/${encodeURIComponent(roomId)}`, { state: { email } });
 		},
 		[email, room, navigate]
 	);
@@ -74,12 +76,11 @@ const Lobby = ({ darkMode, toggleDarkMode }) => {
 
 					<div className="space-y-2">
 						<label htmlFor="room" className="block text-sm font-medium">
-							Room Number
+							Room ID <span className="opacity-60">(leave empty to create a new room)</span>
 						</label>
 						<input
 							type="text"
 							id="room"
-							required
 							placeholder="Enter room ID"
 							value={room}
 							onChange={(e) => setRoom(e.target.value)}
@@ -95,7 +96,7 @@ const Lobby = ({ darkMode, toggleDarkMode }) => {
 						type="submit"
 						className="w-full py-3 rounded-lg bg-indigo-600 text-white font-semibold text-lg transition-transform duration-300 hover:bg-indigo-700 hover:-translate-y-1 hover:shadow-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
 					>
-						Join Room
+						{room.trim() ? "Join Room" : "Create Room"}
 					</button>
 				</form>
 			</main>
