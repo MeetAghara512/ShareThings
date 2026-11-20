@@ -1,9 +1,10 @@
 import React, { useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { FaMoon, FaSun } from "react-icons/fa";
+import { useAuth, GoogleSignInButton } from "../useContext/AuthProvider";
 
 const Lobby = ({ darkMode, toggleDarkMode }) => {
-	const [email, setEmail] = useState("");
+	const { user, signOut } = useAuth();
 	const [room, setRoom] = useState("");
 	const navigate = useNavigate();
 
@@ -12,9 +13,9 @@ const Lobby = ({ darkMode, toggleDarkMode }) => {
 			e.preventDefault();
 			// No room entered: create a new one with a random ID
 			const roomId = room.trim() || crypto.randomUUID().slice(0, 8);
-			navigate(`/room/${encodeURIComponent(roomId)}`, { state: { email } });
+			navigate(`/room/${encodeURIComponent(roomId)}`);
 		},
-		[email, room, navigate]
+		[room, navigate]
 	);
 
 	return (
@@ -55,23 +56,20 @@ const Lobby = ({ darkMode, toggleDarkMode }) => {
 							: "bg-white text-gray-900")
 					}
 				>
-					<div className="space-y-2">
-						<label htmlFor="email" className="block text-sm font-medium">
-							Your Email
-						</label>
-						<input
-							type="email"
-							id="email"
-							required
-							placeholder="you@example.com"
-							value={email}
-							onChange={(e) => setEmail(e.target.value)}
-							className={`w-full px-4 py-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-indigo-400 transition-all duration-300 text-sm ` +
-								(darkMode
-									? "bg-gray-700 border-gray-600 placeholder-gray-400 focus:border-indigo-500"
-									: "border-gray-300 placeholder-gray-500 focus:border-indigo-600 hover:border-indigo-400")
-							}
-						/>
+					<div className="space-y-2 text-sm">
+						{user ? (
+							<div className="flex items-center justify-between gap-3">
+								<span className="truncate">Signed in as <strong>{user.email}</strong></span>
+								<button type="button" onClick={signOut} className="underline shrink-0 hover:text-indigo-400">
+									Sign out
+								</button>
+							</div>
+						) : (
+							<>
+								<GoogleSignInButton />
+								<p className="opacity-60">Optional. You can join a call without signing in.</p>
+							</>
+						)}
 					</div>
 
 					<div className="space-y-2">

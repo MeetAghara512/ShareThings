@@ -1,6 +1,7 @@
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
+const { OAuth2Client } = require("google-auth-library");
 
 const app = express();
 const server = http.createServer(app);
@@ -16,6 +17,22 @@ const io = new Server(server, {
 });
 
 const MAX_ROOM_SIZE = 2;
+
+// Public identifier of the Google OAuth client (not a secret); must match the one the client signs in with
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "123263407226-ltqv9qfv6s58ocr5nvgk2vggoa0addhf.apps.googleusercontent.com";
+const googleClient = new OAuth2Client();
+
+// Returns the user Google vouches for, or null when the token is missing, forged, expired or for another app
+async function verifyGoogleToken(token) {
+  if (typeof token !== "string") return null;
+  try {
+    const ticket = await googleClient.verifyIdToken({ idToken: token, audience: GOOGLE_CLIENT_ID });
+    const { email, email_verified, name } = ticket.getPayload();
+    return email_verified ? { email, name } : null;
+  } catch {
+    return null;
+  }
+}
 const STUN_ONLY = [{ urls: "stun:stun.l.google.com:19302" }];
 
 // Short-lived TURN credentials from Xirsys; falls back to STUN when not configured
@@ -48,7 +65,13 @@ io.on("connection", socket => {
     if (data !== null && typeof data === "object") next();
   });
 
-  socket.on("room:join", async ({ email, room }, ack) => {
+  // Sign in (or out, with a null token). socket.data.user is the only identity the server trusts.
+  socket.on("auth:google", async ({ token }, ack) => {
+    socket.data.user = await verifyGoogleToken(token);
+    if (typeof ack === "function") ack(socket.data.user);
+  });
+
+  socket.on("room:join", async ({ room }, ack) => {
     if (typeof room !== "string" || !room || typeof ack !== "function") return;
     const members = io.sockets.adapter.rooms.get(room);
     if (members?.size >= MAX_ROOM_SIZE && !members.has(socket.id)) return ack({ full: true });
@@ -58,7 +81,7 @@ io.on("connection", socket => {
     if (!socket.rooms.has(room)) return; // left or disconnected while waiting
     const peerId = [...io.sockets.adapter.rooms.get(room)].find(id => id !== socket.id) ?? null;
     ack({ peerId, iceServers });
-    socket.to(room).emit("user:joined", { email, id: socket.id });
+    socket.to(room).emit("user:joined", { id: socket.id });
   });
 
   socket.on("user:call", ({ to, offer }) =>
