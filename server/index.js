@@ -99,6 +99,12 @@ io.on("connection", socket => {
   socket.on("call:accepted", ({ to, ans }) =>
     io.to(to).emit("call:accepted", { from: socket.id, ans })
   );
+  socket.on("call:declined", ({ to }) =>
+    io.to(to).emit("call:declined", { from: socket.id })
+  );
+  socket.on("call:cancelled", ({ to }) =>
+    io.to(to).emit("call:cancelled", { from: socket.id })
+  );
   socket.on("ice:candidate", ({ to, candidate }) =>
     io.to(to).emit("ice:candidate", { from: socket.id, candidate })
   );
