@@ -62,7 +62,7 @@ cd server && npm install
 cd client && npm install
 ```
 
-Backend environment variables: `PORT` (default `5000`) and, for TURN relay on strict networks, your Xirsys account's `XIRSYS_IDENT`, `XIRSYS_SECRET` and `XIRSYS_CHANNEL`. Without them the app falls back to STUN only. Email invites need a Brevo API key in `BREVO_API_KEY` (and optionally `INVITE_FROM_EMAIL`, a sender address verified in Brevo).
+Backend environment variables: `PORT` (default `5000`) and, for TURN relay on strict networks, your Xirsys account's `XIRSYS_IDENT`, `XIRSYS_SECRET` and `XIRSYS_CHANNEL`. Without them the app falls back to STUN only. Email invites are sent through the Gmail API and need `GMAIL_CLIENT_SECRET` and `GMAIL_REFRESH_TOKEN` (and optionally `INVITE_FROM_EMAIL`, an address the Gmail account may send as).
 
 ---
 

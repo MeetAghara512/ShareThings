@@ -105,7 +105,7 @@ io.on("connection", socket => {
 
   // Email the room link to a guest; see invite.js for the rules
   socket.on("invite:send", async (payload, ack) => {
-    const result = await sendInvite(socket, payload, ALLOWED_ORIGINS);
+    const result = await sendInvite(socket, payload, ALLOWED_ORIGINS, GOOGLE_CLIENT_ID);
     if (typeof ack === "function") ack(result);
   });
 

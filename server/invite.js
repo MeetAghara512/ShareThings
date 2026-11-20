@@ -1,6 +1,9 @@
 // Email invites: a signed-in user who is waiting in a room can have the room link mailed to a guest.
-// Sent through Brevo's HTTP API. Rate limits live in memory, so they reset when the server restarts.
+// Sent from the app's own Gmail account through the Gmail API (HTTPS; the host blocks outbound SMTP).
+// Rate limits live in memory, so they reset when the server restarts.
 const crypto = require("crypto");
+const { OAuth2Client } = require("google-auth-library");
+const MailComposer = require("nodemailer/lib/mail-composer");
 
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
@@ -59,16 +62,29 @@ function buildIcs({ start, link, name }) {
     .join("\r\n") + "\r\n";
 }
 
+// OAuth client for the Gmail account, created on first use; the library caches and refreshes the access token
+let gmailClient;
+async function gmailAccessToken(clientId) {
+  if (!gmailClient) {
+    gmailClient = new OAuth2Client(clientId, process.env.GMAIL_CLIENT_SECRET);
+    gmailClient.setCredentials({ refresh_token: process.env.GMAIL_REFRESH_TOKEN });
+  }
+  const { token } = await gmailClient.getAccessToken();
+  if (!token) throw new Error("no access token");
+  return token;
+}
+
+// Options for the MIME composer, which encodes the headers so user-derived values cannot add any
 function buildEmail({ user, name, to, link, start }) {
   const time = start && start.toLocaleString("en-GB", { dateStyle: "full", timeStyle: "short", timeZone: "UTC" }) + " UTC";
   const [hName, hEmail, hLink] = [name, user.email, link].map(escapeHtml);
 
   const email = {
-    sender: { name: "ShareThings", email: process.env.INVITE_FROM_EMAIL || "sharethings.invites@gmail.com" },
-    to: [{ email: to }],
-    replyTo: { email: user.email, name },
+    from: { name: "ShareThings", address: process.env.INVITE_FROM_EMAIL || "sharethings.invites@gmail.com" },
+    to,
+    replyTo: { name, address: user.email },
     subject: `${name} invited you to a ShareThings call`,
-    htmlContent:
+    html:
       `<div style="font-family:Arial,sans-serif;font-size:16px;line-height:1.5;color:#18181b;max-width:480px">` +
       `<p><strong>${hName}</strong> (${hEmail}) invited you to a video call on ShareThings.</p>` +
       (time ? `<p><strong>When:</strong> ${escapeHtml(time)}<br>The attached calendar file shows this in your own time zone.</p>` : "") +
@@ -76,20 +92,21 @@ function buildEmail({ user, name, to, link, start }) {
       `<p>Or open this link in your browser:<br><a href="${hLink}">${hLink}</a></p>` +
       `<p style="font-size:12px;color:#71717a">Sent by ${hEmail} via ShareThings</p>` +
       `</div>`,
-    textContent:
+    text:
       `${name} (${user.email}) invited you to a video call on ShareThings.\n\n` +
       (time ? `When: ${time}\nThe attached calendar file shows this in your own time zone.\n\n` : "") +
       `Join the call: ${link}\n\n` +
-      `Sent by ${user.email} via ShareThings\n`
+      `Sent by ${user.email} via ShareThings\n`,
+    newline: "windows" // CRLF line endings throughout, as RFC 822 requires
   };
   if (start) {
-    email.attachment = [{ name: "invite.ics", content: Buffer.from(buildIcs({ start, link, name })).toString("base64") }];
+    email.attachments = [{ filename: "invite.ics", content: buildIcs({ start, link, name }), contentType: "text/calendar; charset=utf-8; method=PUBLISH" }];
   }
   return email;
 }
 
 // Validates the request, sends the email and returns the ack: { ok: true } or { error }. Never throws.
-async function sendInvite(socket, { to, room, when }, allowedOrigins) {
+async function sendInvite(socket, { to, room, when }, allowedOrigins, googleClientId) {
   try {
     const user = socket.data.user;
     if (!user) return { error: "Sign in with Google to send invites." };
@@ -113,8 +130,7 @@ async function sendInvite(socket, { to, room, when }, allowedOrigins) {
     if (!allowedOrigins.includes(origin)) return { error: "Invites cannot be sent from this site." };
     const link = `${origin}/room/${encodeURIComponent(room)}`;
 
-    const apiKey = process.env.BREVO_API_KEY;
-    if (!apiKey) return { error: "Email invites are not set up on this server." };
+    if (!process.env.GMAIL_CLIENT_SECRET || !process.env.GMAIL_REFRESH_TOKEN) return { error: "Email invites are not set up on this server. Copy the invite link above and send it yourself." };
 
     // cf-connecting-ip is set by the host's edge and cannot be forged through it; x-forwarded-for can be
     const { "cf-connecting-ip": edgeIp, "x-forwarded-for": forwardedFor } = socket.handshake.headers;
@@ -133,10 +149,12 @@ async function sendInvite(socket, { to, room, when }, allowedOrigins) {
     const name = String(user.name || user.email).replace(/\s+/g, " ").trim();
     let failure;
     try {
-      const res = await fetch("https://api.brevo.com/v3/smtp/email", {
+      const token = await gmailAccessToken(googleClientId);
+      const message = await new MailComposer(buildEmail({ user, name, to, link, start })).compile().build();
+      const res = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
         method: "POST",
-        headers: { "api-key": apiKey, "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify(buildEmail({ user, name, to, link, start })),
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ raw: message.toString("base64url") }),
         signal: AbortSignal.timeout(10000)
       });
       if (!res.ok) failure = `${res.status} ${await res.text().catch(() => "")}`;
@@ -152,10 +170,10 @@ async function sendInvite(socket, { to, room, when }, allowedOrigins) {
       if (i !== -1) list.splice(i, 1);
       if (!list.length) sent.delete(keys[type]);
     }
-    return { error: "The invite could not be sent. Please try again later." };
+    return { error: "The invite could not be sent. Copy the invite link above and send it yourself." };
   } catch (err) {
     console.error("Invite failed:", err.message);
-    return { error: "The invite could not be sent. Please try again later." };
+    return { error: "The invite could not be sent. Copy the invite link above and send it yourself." };
   }
 }
 
