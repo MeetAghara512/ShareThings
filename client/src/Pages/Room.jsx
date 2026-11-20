@@ -18,6 +18,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	const [muted, setMuted] = useState(false);
 
 	const myStreamRef = useRef(null);
+	const callingRef = useRef(false);
 
 	const handleCutCall = () => {
 		if (myStreamRef.current) myStreamRef.current.getTracks().forEach(t => t.stop());
@@ -37,9 +38,16 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		});
 	}, [socket, email, roomId, navigate]);
 
+	// Leaving the page (e.g. browser Back) frees the camera, the connection and our place in the room
 	useEffect(() => {
 		joinRoom();
-	}, [joinRoom]);
+		return () => {
+			myStreamRef.current?.getTracks().forEach(t => t.stop());
+			myStreamRef.current = null;
+			peer.reset();
+			socket.emit("room:leave", { room: roomId });
+		};
+	}, [joinRoom, socket, roomId]);
 
 	// Send our ICE candidates to the other user and show their media when it arrives
 	useEffect(() => {
@@ -60,6 +68,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		setRemoteSocketId(null);
 		setIsScreen(false);
 		setMuted(false);
+		callingRef.current = false;
 		joinRoom();
 	}, [joinRoom]);
 
@@ -74,9 +83,16 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 
 	// Outgoing call
 	const handleCallUser = useCallback(async () => {
-		await setupMedia();
-		const offer = await peer.getOffer();
-		socket.emit("user:call", { to: remoteSocketId, offer });
+		if (callingRef.current) return; // ignore repeat clicks while the camera prompt is open
+		callingRef.current = true;
+		try {
+			await setupMedia();
+			const offer = await peer.getOffer();
+			socket.emit("user:call", { to: remoteSocketId, offer });
+		} catch (e) {
+			console.error("Call failed", e);
+			callingRef.current = false;
+		}
 	}, [remoteSocketId, socket, setupMedia]);
 
 	// Incoming call: apply the offer first so our tracks reuse its transceivers (no renegotiation)

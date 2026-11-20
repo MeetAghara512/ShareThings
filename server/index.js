@@ -43,14 +43,19 @@ async function getIceServers() {
 
 io.on("connection", socket => {
 
-  socket.on("room:join", async ({ email, room } = {}, ack) => {
+  // Every event carries an object payload; drop anything else before a handler can throw on it
+  socket.use(([, data], next) => {
+    if (data !== null && typeof data === "object") next();
+  });
+
+  socket.on("room:join", async ({ email, room }, ack) => {
     if (typeof room !== "string" || !room || typeof ack !== "function") return;
     const members = io.sockets.adapter.rooms.get(room);
     if (members?.size >= MAX_ROOM_SIZE && !members.has(socket.id)) return ack({ full: true });
     socket.join(room);
 
     const iceServers = await getIceServers();
-    if (socket.disconnected) return;
+    if (!socket.rooms.has(room)) return; // left or disconnected while waiting
     const peerId = [...io.sockets.adapter.rooms.get(room)].find(id => id !== socket.id) ?? null;
     ack({ peerId, iceServers });
     socket.to(room).emit("user:joined", { email, id: socket.id });
@@ -65,6 +70,12 @@ io.on("connection", socket => {
   socket.on("ice:candidate", ({ to, candidate }) =>
     io.to(to).emit("ice:candidate", { from: socket.id, candidate })
   );
+
+  socket.on("room:leave", ({ room }) => {
+    if (room === socket.id || !socket.rooms.has(room)) return;
+    socket.to(room).emit("user:left", { id: socket.id });
+    socket.leave(room);
+  });
 
   socket.on("disconnecting", () => {
     socket.rooms.forEach(room => {
