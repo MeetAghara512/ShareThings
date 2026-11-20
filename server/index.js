@@ -71,8 +71,10 @@ io.on("connection", socket => {
     if (typeof ack === "function") ack(socket.data.user);
   });
 
-  socket.on("room:join", async ({ room }, ack) => {
+  socket.on("room:join", async ({ room, name }, ack) => {
     if (typeof room !== "string" || !room || typeof ack !== "function") return;
+    // Display name shown to the other member: plain text, at most 40 characters
+    socket.data.name = (typeof name === "string" && name.trim().slice(0, 40).trim()) || "Guest";
     const members = io.sockets.adapter.rooms.get(room);
     if (members?.size >= MAX_ROOM_SIZE && !members.has(socket.id)) return ack({ full: true });
     socket.join(room);
@@ -80,8 +82,9 @@ io.on("connection", socket => {
     const iceServers = await getIceServers();
     if (!socket.rooms.has(room)) return; // left or disconnected while waiting
     const peerId = [...io.sockets.adapter.rooms.get(room)].find(id => id !== socket.id) ?? null;
-    ack({ peerId, iceServers });
-    socket.to(room).emit("user:joined", { id: socket.id });
+    const peerName = io.sockets.sockets.get(peerId)?.data.name ?? null;
+    ack({ peerId, peerName, iceServers });
+    socket.to(room).emit("user:joined", { id: socket.id, name: socket.data.name });
   });
 
   socket.on("user:call", ({ to, offer }) =>
