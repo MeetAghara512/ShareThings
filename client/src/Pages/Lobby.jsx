@@ -136,6 +136,12 @@ const Lobby = ({ darkMode, toggleDarkMode }) => {
 					</button>
 				</form>
 			</main>
+
+			<footer className="p-5 text-center text-sm opacity-70">
+				<a href="/privacy.html" className="underline hover:text-indigo-400">Privacy Policy</a>
+				{" · "}
+				<a href="/terms.html" className="underline hover:text-indigo-400">Terms of Service</a>
+			</footer>
 		</div>
 	);
 };
