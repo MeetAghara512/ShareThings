@@ -62,7 +62,7 @@ cd server && npm install
 cd client && npm install
 ```
 
-Backend environment variables: `PORT` (default `5000`) and, for TURN relay on strict networks, your Xirsys account's `XIRSYS_IDENT`, `XIRSYS_SECRET` and `XIRSYS_CHANNEL`. Without them the app falls back to STUN only. `GOOGLE_CLIENT_ID` overrides the built-in Google sign-in client ID.
+Backend environment variables: `PORT` (default `5000`) and, for TURN relay on strict networks, your Xirsys account's `XIRSYS_IDENT`, `XIRSYS_SECRET` and `XIRSYS_CHANNEL`. Without them the app falls back to STUN only.
 
 ---
 

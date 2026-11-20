@@ -18,8 +18,8 @@ const io = new Server(server, {
 
 const MAX_ROOM_SIZE = 2;
 
-// Public identifier of the Google OAuth client (not a secret); must match the one the client signs in with
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "123263407226-ltqv9qfv6s58ocr5nvgk2vggoa0addhf.apps.googleusercontent.com";
+// Public identifier of the Google OAuth client (not a secret). Must match GOOGLE_CLIENT_ID in client/src/useContext/AuthProvider.jsx
+const GOOGLE_CLIENT_ID = "123263407226-ltqv9qfv6s58ocr5nvgk2vggoa0addhf.apps.googleusercontent.com";
 const googleClient = new OAuth2Client();
 
 // Returns the user Google vouches for, or null when the token is missing, forged, expired or for another app

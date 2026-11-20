@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { useSocket } from "./SocketProvider";
 
-// Public identifier of the Google OAuth client (not a secret). The server checks tokens against the same ID.
+// Public identifier of the Google OAuth client (not a secret). Must match GOOGLE_CLIENT_ID in server/index.js
 const GOOGLE_CLIENT_ID = "123263407226-ltqv9qfv6s58ocr5nvgk2vggoa0addhf.apps.googleusercontent.com";
 const TOKEN_KEY = "sharethings.googleToken";
 
