@@ -34,6 +34,17 @@ setInterval(() => {
   }
 }, HOUR).unref();
 
+// Addresses that reach the same mailbox share one per-recipient limit: +tags everywhere, dots for Gmail
+function mailboxKey(address) {
+  let [local, domain] = address.split("@");
+  local = local.split("+")[0];
+  if (domain === "gmail.com" || domain === "googlemail.com") {
+    local = local.replace(/\./g, "");
+    domain = "gmail.com";
+  }
+  return `${local}@${domain}`;
+}
+
 const icsText = value =>
   String(value).replace(/\\/g, "\\\\").replace(/([,;])/g, "\\$1").replace(/\r?\n|\r/g, "\\n");
 
@@ -129,7 +140,7 @@ async function sendInvite(socket, { to, room, when }, allowedOrigins, googleClie
     const keys = {
       sender: user.email.toLowerCase(),
       ip: edgeIp || (typeof forwardedFor === "string" && forwardedFor.split(",")[0].trim()) || socket.handshake.address,
-      recipient: to
+      recipient: mailboxKey(to)
     };
     const now = Date.now();
     for (const [type, limit] of Object.entries(LIMITS)) {
