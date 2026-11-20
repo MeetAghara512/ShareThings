@@ -74,11 +74,18 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 
 	// Camera + mic, added to the connection once per call
 	const setupMedia = useCallback(async () => {
-		if (myStreamRef.current) return;
+		if (myStreamRef.current) return true;
+		const connection = peer.peer;
 		const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+		if (connection !== peer.peer) {
+			// The call ended while the camera prompt was open (e.g. browser Back): don't leave the camera on
+			stream.getTracks().forEach(t => t.stop());
+			return false;
+		}
 		myStreamRef.current = stream;
 		setMyStream(stream);
 		stream.getTracks().forEach(t => peer.peer.addTrack(t, stream));
+		return true;
 	}, []);
 
 	// Outgoing call
@@ -86,7 +93,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		if (callingRef.current) return; // ignore repeat clicks while the camera prompt is open
 		callingRef.current = true;
 		try {
-			await setupMedia();
+			if (!(await setupMedia())) return;
 			const offer = await peer.getOffer();
 			socket.emit("user:call", { to: remoteSocketId, offer });
 		} catch (e) {
@@ -98,7 +105,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	// Incoming call: apply the offer first so our tracks reuse its transceivers (no renegotiation)
 	const handleIncomingCall = useCallback(async ({ from, offer }) => {
 		await peer.setRemoteDescription(offer);
-		await setupMedia();
+		if (!(await setupMedia())) return;
 		const ans = await peer.getAnswer();
 		socket.emit("call:accepted", { to: from, ans });
 	}, [socket, setupMedia]);
