@@ -116,10 +116,11 @@ async function sendInvite(socket, { to, room, when }, allowedOrigins) {
     const apiKey = process.env.BREVO_API_KEY;
     if (!apiKey) return { error: "Email invites are not set up on this server." };
 
-    const forwardedFor = socket.handshake.headers["x-forwarded-for"];
+    // cf-connecting-ip is set by the host's edge and cannot be forged through it; x-forwarded-for can be
+    const { "cf-connecting-ip": edgeIp, "x-forwarded-for": forwardedFor } = socket.handshake.headers;
     const keys = {
       sender: user.email.toLowerCase(),
-      ip: (typeof forwardedFor === "string" && forwardedFor.split(",")[0].trim()) || socket.handshake.address,
+      ip: edgeIp || (typeof forwardedFor === "string" && forwardedFor.split(",")[0].trim()) || socket.handshake.address,
       recipient: to
     };
     const now = Date.now();

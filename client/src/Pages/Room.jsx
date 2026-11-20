@@ -14,8 +14,8 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	const [myStream, setMyStream] = useState(null);
 	const [remoteStream, setRemoteStream] = useState(null);
 	const [remoteName, setRemoteName] = useState(null);
-	// Display name chosen on the Lobby (same key as Lobby.jsx)
-	const myName = localStorage.getItem("sharethings.name");
+	// Display name chosen on the Lobby (same key as Lobby.jsx). Read once: a rename in another tab must not re-join mid-call
+	const [myName] = useState(() => localStorage.getItem("sharethings.name"));
 
 	const [isScreen, setIsScreen] = useState(false);
 	const [muted, setMuted] = useState(false);
