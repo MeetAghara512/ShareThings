@@ -3,6 +3,7 @@ import { FaMoon, FaSun, FaPhone, FaDesktop, FaVideo, FaMicrophone, FaMicrophoneS
 import peer from "../Services/peer";
 import { useSocket } from "../useContext/SocketProvider";
 import { useNavigate, useParams } from "react-router-dom";
+import InviteForm from "./InviteForm";
 
 const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	const { roomId } = useParams();
@@ -227,6 +228,7 @@ return (
 						{copied ? <FaCheck /> : <FaLink />}
 						{copied ? "Link copied!" : "Copy invite link"}
 					</button>
+					<InviteForm roomId={roomId} darkMode={darkMode} />
 					</div>
 				) : (
 					<div className="px-4 py-2 rounded-full bg-green-100 text-green-800 font-semibold text-sm shadow inline-block">

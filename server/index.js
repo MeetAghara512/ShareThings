@@ -1,17 +1,23 @@
+try { process.loadEnvFile(__dirname + "/.env"); } catch {} // optional local server/.env
+
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
 const { OAuth2Client } = require("google-auth-library");
+const { sendInvite } = require("./invite");
 
 const app = express();
 const server = http.createServer(app);
 
+// Sites allowed to connect; invite emails only ever link to one of these
+const ALLOWED_ORIGINS = [
+  "https://sharethings-web.onrender.com",
+  "http://localhost:3000"
+];
+
 const io = new Server(server, {
   cors: {
-    origin: [
-      "https://sharethings-web.onrender.com",
-      "http://localhost:3000"
-    ],
+    origin: ALLOWED_ORIGINS,
     methods: ["GET", "POST"]
   }
 });
@@ -93,6 +99,12 @@ io.on("connection", socket => {
   socket.on("ice:candidate", ({ to, candidate }) =>
     io.to(to).emit("ice:candidate", { from: socket.id, candidate })
   );
+
+  // Email the room link to a guest; see invite.js for the rules
+  socket.on("invite:send", async (payload, ack) => {
+    const result = await sendInvite(socket, payload, ALLOWED_ORIGINS);
+    if (typeof ack === "function") ack(result);
+  });
 
   socket.on("room:leave", ({ room }) => {
     if (room === socket.id || !socket.rooms.has(room)) return;
