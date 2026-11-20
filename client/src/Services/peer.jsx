@@ -6,9 +6,13 @@ class PeerService {
 	// A fresh connection per call. iceServers (with short-lived TURN credentials) come from the server.
 	reset(iceServers = []) {
 		this.peer?.close();
-		this.peer = new RTCPeerConnection({ iceServers });
-		this.peer.onicecandidate = e => e.candidate && this.onIceCandidate?.(e.candidate);
-		this.peer.ontrack = e => this.onTrack?.(e.streams[0]);
+		const pc = new RTCPeerConnection({ iceServers });
+		this.peer = pc;
+		pc.onicecandidate = e => e.candidate && this.onIceCandidate?.(e.candidate);
+		pc.ontrack = e => this.onTrack?.(e.streams[0]);
+		// State changes are only reported for the current connection
+		pc.onconnectionstatechange = () => pc === this.peer && this.onConnectionState?.(pc.connectionState);
+		pc.oniceconnectionstatechange = () => pc === this.peer && this.onIceState?.(pc.iceConnectionState);
 	}
 
 	async getAnswer() {
