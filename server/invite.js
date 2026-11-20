@@ -8,7 +8,8 @@ const MailComposer = require("nodemailer/lib/mail-composer");
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
 const YEAR = 365 * DAY;
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// A bare address only: no display name, group or comment syntax that a mail parser would read differently
+const EMAIL_RE = /^[^\s@<>"(),;:[\]\\]+@[^\s@<>"(),;:[\]\\]+\.[^\s@<>"(),;:[\]\\]+$/;
 
 // Each limit maps a key (sender email, IP, recipient) to the timestamps of its recent invites
 const LIMITS = {
@@ -32,9 +33,6 @@ setInterval(() => {
     for (const key of limit.sent.keys()) recentCount(limit, key, now);
   }
 }, HOUR).unref();
-
-const escapeHtml = value =>
-  String(value).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
 const icsText = value =>
   String(value).replace(/\\/g, "\\\\").replace(/([,;])/g, "\\$1").replace(/\r?\n|\r/g, "\\n");
@@ -77,25 +75,19 @@ async function gmailAccessToken(clientId) {
 // Options for the MIME composer, which encodes the headers so user-derived values cannot add any
 function buildEmail({ user, name, to, link, start }) {
   const time = start && start.toLocaleString("en-GB", { dateStyle: "full", timeStyle: "short", timeZone: "UTC" }) + " UTC";
-  const [hName, hEmail, hLink] = [name, user.email, link].map(escapeHtml);
 
+  // Plain text on purpose: a short note with one link is less likely to be filed as spam than a styled one
   const email = {
     from: { name: "ShareThings", address: process.env.INVITE_FROM_EMAIL || "sharethings.invites@gmail.com" },
-    to,
+    to: { address: to },
     replyTo: { name, address: user.email },
-    subject: `${name} invited you to a ShareThings call`,
-    html:
-      `<div style="font-family:Arial,sans-serif;font-size:16px;line-height:1.5;color:#18181b;max-width:480px">` +
-      `<p><strong>${hName}</strong> (${hEmail}) invited you to a video call on ShareThings.</p>` +
-      (time ? `<p><strong>When:</strong> ${escapeHtml(time)}<br>The attached calendar file shows this in your own time zone.</p>` : "") +
-      `<p><a href="${hLink}" style="display:inline-block;padding:12px 24px;border-radius:9999px;background:#4f46e5;color:#ffffff;text-decoration:none;font-weight:bold">Join the call</a></p>` +
-      `<p>Or open this link in your browser:<br><a href="${hLink}">${hLink}</a></p>` +
-      `<p style="font-size:12px;color:#71717a">Sent by ${hEmail} via ShareThings</p>` +
-      `</div>`,
+    subject: `Video call invitation from ${name}`,
     text:
-      `${name} (${user.email}) invited you to a video call on ShareThings.\n\n` +
+      `Hi,\n\n` +
+      `${name} (${user.email}) would like to have a video call with you on ShareThings.\n\n` +
       (time ? `When: ${time}\nThe attached calendar file shows this in your own time zone.\n\n` : "") +
-      `Join the call: ${link}\n\n` +
+      `To join, open this link in your browser:\n${link}\n\n` +
+      `You can reply to this email to reach ${name}.\n\n` +
       `Sent by ${user.email} via ShareThings\n`,
     newline: "windows" // CRLF line endings throughout, as RFC 822 requires
   };
