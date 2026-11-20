@@ -10,7 +10,7 @@ export const useSocket = () => {  //custom hook
 
 export const SocketProvider = (props) => {
       const socket = useMemo(() => {
-            const URL = process.env.REACT_APP_SOCKET_SERVER_URL;
+            const URL = import.meta.env.REACT_APP_SOCKET_SERVER_URL;
 
             return io(URL, {
                   transports: ["websocket"],
