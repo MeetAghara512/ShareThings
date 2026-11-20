@@ -2,11 +2,10 @@ import React, { useEffect, useCallback, useRef, useState } from "react";
 import { FaMoon, FaSun, FaPhone, FaDesktop, FaVideo, FaMicrophone, FaMicrophoneSlash, FaLink, FaCheck } from "react-icons/fa";
 import peer from "../Services/peer";
 import { useSocket } from "../useContext/SocketProvider";
-import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 
 const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	const { roomId } = useParams();
-	const email = useLocation().state?.email;
 	const navigate = useNavigate();
 	const socket = useSocket();
 
@@ -40,7 +39,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 
 	// Join the room; the server replies with who is already there and the ICE servers to use
 	const joinRoom = useCallback(() => {
-		socket.emit("room:join", { email, room: roomId }, ({ full, peerId, iceServers }) => {
+		socket.emit("room:join", { room: roomId }, ({ full, peerId, iceServers }) => {
 			if (full) {
 				alert("This room is full.");
 				return navigate("/");
@@ -48,7 +47,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 			peer.reset(iceServers);
 			setRemoteSocketId(peerId);
 		});
-	}, [socket, email, roomId, navigate]);
+	}, [socket, roomId, navigate]);
 
 	// Leaving the page (e.g. browser Back) frees the camera, the connection and our place in the room
 	useEffect(() => {

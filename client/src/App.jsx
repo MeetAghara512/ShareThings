@@ -3,6 +3,7 @@ import { Routes, Route } from 'react-router-dom';
 import Lobby from './Pages/Lobby';
 import Room from './Pages/Room';
 import { useState } from 'react';
+import { AuthProvider } from './useContext/AuthProvider';
 
 function App() {
 	const [darkMode, setDarkMode] = useState(true);
@@ -14,10 +15,12 @@ function App() {
 				? "dark bg-gray-900 text-gray-100"
 				: "bg-white text-gray-900"
 			}`}>
+			<AuthProvider>
 			<Routes>
 				<Route path='/' element={<Lobby darkMode={darkMode} toggleDarkMode={toggleDarkMode} />} />
 				<Route path='/room/:roomId' element={<Room darkMode={darkMode} toggleDarkMode={toggleDarkMode} />} />
 			</Routes>
+			</AuthProvider>
 		</div>
 	);
 }
