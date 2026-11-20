@@ -1,36 +1,19 @@
-import React, { useState, useCallback, useEffect } from "react";
-import { useSocket } from "../useContext/SocketProvider";
+import React, { useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { FaMoon, FaSun } from "react-icons/fa";
 
 const Lobby = ({ darkMode, toggleDarkMode }) => {
 	const [email, setEmail] = useState("");
 	const [room, setRoom] = useState("");
-	const socket = useSocket();
 	const navigate = useNavigate();
 
 	const handleSubmit = useCallback(
 		(e) => {
 			e.preventDefault();
-			socket.emit("room:join", { email, room });
+			navigate(`/room/${encodeURIComponent(room)}`, { state: { email } });
 		},
-		[email, room, socket]
+		[email, room, navigate]
 	);
-
-	const handleJoinRoom = useCallback(
-		(data) => {
-			const { room } = data;
-			navigate(`/room/${room}`);
-		},
-		[navigate]
-	);
-
-	useEffect(() => {
-		socket.on("room:join", handleJoinRoom);
-		return () => {
-			socket.off("room:join", handleJoinRoom);
-		};
-	}, [socket, handleJoinRoom]);
 
 	return (
 		<div

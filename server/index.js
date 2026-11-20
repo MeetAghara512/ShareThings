@@ -15,32 +15,50 @@ const io = new Server(server, {
   }
 });
 
-const emailToSocketIdMap = new Map();
-const socketidToEmailMap = new Map();
+const MAX_ROOM_SIZE = 2;
+const STUN_ONLY = [{ urls: "stun:stun.l.google.com:19302" }];
+
+// Short-lived TURN credentials from Xirsys; falls back to STUN when not configured
+async function getIceServers() {
+  const { XIRSYS_IDENT, XIRSYS_SECRET, XIRSYS_CHANNEL } = process.env;
+  if (!XIRSYS_IDENT || !XIRSYS_SECRET || !XIRSYS_CHANNEL) return STUN_ONLY;
+  try {
+    const res = await fetch(`https://global.xirsys.net/_turn/${XIRSYS_CHANNEL}`, {
+      method: "PUT",
+      headers: {
+        Authorization: "Basic " + Buffer.from(`${XIRSYS_IDENT}:${XIRSYS_SECRET}`).toString("base64"),
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ format: "urls" }),
+      signal: AbortSignal.timeout(5000)
+    });
+    const { s, v } = await res.json();
+    if (s !== "ok") throw new Error(v);
+    return [].concat(v.iceServers);
+  } catch (err) {
+    console.error("TURN credentials unavailable, using STUN only:", err.message);
+    return STUN_ONLY;
+  }
+}
 
 io.on("connection", socket => {
 
-  socket.on("room:join", ({ email, room }) => {
-    emailToSocketIdMap.set(email, socket.id);
-    socketidToEmailMap.set(socket.id, email);
-    socket.join(room);
-    io.to(room).emit("user:joined", { email, id: socket.id });
-    io.to(socket.id).emit("room:join", { email, room });
+  // Every event carries an object payload; drop anything else before a handler can throw on it
+  socket.use(([, data], next) => {
+    if (data !== null && typeof data === "object") next();
   });
 
-  // room check
-  socket.on("room:check", ({ roomId, selfId }) => {
-    const room = io.sockets.adapter.rooms.get(roomId);
-    if (room && room.size > 1) {
-      const other = [...room].find(id => id !== selfId);
-      io.to(socket.id).emit("room:user", {
-        exists: true,
-        socketId: other,
-        email: socketidToEmailMap.get(other)
-      });
-    } else {
-      io.to(socket.id).emit("room:user", { exists: false });
-    }
+  socket.on("room:join", async ({ email, room }, ack) => {
+    if (typeof room !== "string" || !room || typeof ack !== "function") return;
+    const members = io.sockets.adapter.rooms.get(room);
+    if (members?.size >= MAX_ROOM_SIZE && !members.has(socket.id)) return ack({ full: true });
+    socket.join(room);
+
+    const iceServers = await getIceServers();
+    if (!socket.rooms.has(room)) return; // left or disconnected while waiting
+    const peerId = [...io.sockets.adapter.rooms.get(room)].find(id => id !== socket.id) ?? null;
+    ack({ peerId, iceServers });
+    socket.to(room).emit("user:joined", { email, id: socket.id });
   });
 
   socket.on("user:call", ({ to, offer }) =>
@@ -49,18 +67,20 @@ io.on("connection", socket => {
   socket.on("call:accepted", ({ to, ans }) =>
     io.to(to).emit("call:accepted", { from: socket.id, ans })
   );
-  socket.on("peer:nego:needed", ({ to, offer }) =>
-    io.to(to).emit("peer:nego:needed", { from: socket.id, offer })
-  );
-  socket.on("peer:nego:done", ({ to, ans }) =>
-    io.to(to).emit("peer:nego:final", { from: socket.id, ans })
+  socket.on("ice:candidate", ({ to, candidate }) =>
+    io.to(to).emit("ice:candidate", { from: socket.id, candidate })
   );
 
-  
-  socket.on("disconnect", () => {
-    const email = socketidToEmailMap.get(socket.id);
-    emailToSocketIdMap.delete(email);
-    socketidToEmailMap.delete(socket.id);
+  socket.on("room:leave", ({ room }) => {
+    if (room === socket.id || !socket.rooms.has(room)) return;
+    socket.to(room).emit("user:left", { id: socket.id });
+    socket.leave(room);
+  });
+
+  socket.on("disconnecting", () => {
+    socket.rooms.forEach(room => {
+      if (room !== socket.id) socket.to(room).emit("user:left", { id: socket.id });
+    });
   });
 });
 
