@@ -80,6 +80,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		setIsScreen(false);
 		setMuted(false);
 		callingRef.current = false;
+		peer.reset(); // right away, so a camera prompt that is still open knows the call is over
 		joinRoom();
 	}, [joinRoom]);
 
