@@ -93,11 +93,19 @@ io.on("connection", socket => {
     socket.to(room).emit("user:joined", { id: socket.id, name: socket.data.name });
   });
 
-  socket.on("user:call", ({ to, offer }) =>
-    io.to(to).emit("incomming:call", { from: socket.id, offer })
+  // `restart`: an ICE restart of the running call (new network path), not a new call
+  socket.on("user:call", ({ to, offer, restart }) =>
+    io.to(to).emit("incomming:call", { from: socket.id, offer, restart: restart === true })
   );
-  socket.on("call:accepted", ({ to, ans }) =>
-    io.to(to).emit("call:accepted", { from: socket.id, ans })
+  socket.on("call:accepted", ({ to, ans, restart }) =>
+    io.to(to).emit("call:accepted", { from: socket.id, ans, restart: restart === true })
+  );
+  // ICE restarts are not getting through: ask the side that sent the first offer to restart, or start the connection over
+  socket.on("call:restart-request", ({ to }) =>
+    io.to(to).emit("call:restart-request", { from: socket.id })
+  );
+  socket.on("call:rebuild", ({ to }) =>
+    io.to(to).emit("call:rebuild", { from: socket.id })
   );
   socket.on("ice:candidate", ({ to, candidate }) =>
     io.to(to).emit("ice:candidate", { from: socket.id, candidate })
