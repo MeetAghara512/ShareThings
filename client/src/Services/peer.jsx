@@ -13,6 +13,11 @@ class PeerService {
 		// State changes are only reported for the current connection
 		pc.onconnectionstatechange = () => pc === this.peer && this.onConnectionState?.(pc.connectionState);
 		pc.oniceconnectionstatechange = () => pc === this.peer && this.onIceState?.(pc.iceConnectionState);
+		// Chat and files (see chat.jsx). Agreed in advance on both sides, so the call's one offer/answer
+		// already includes them and nothing needs renegotiating later
+		this.chat = pc.createDataChannel("chat", { negotiated: true, id: 0 });
+		this.files = pc.createDataChannel("files", { negotiated: true, id: 1 });
+		this.onDataChannels?.(this.chat, this.files);
 	}
 
 	async getAnswer() {
