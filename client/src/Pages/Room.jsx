@@ -1,13 +1,13 @@
 import React, { useEffect, useCallback, useRef, useState } from "react";
-import { FaMoon, FaSun, FaPhone, FaDesktop, FaVideo, FaVideoSlash, FaMicrophone, FaMicrophoneSlash, FaLink, FaCheck } from "react-icons/fa";
+import { FaMoon, FaSun, FaDesktop, FaVideoSlash, FaMicrophoneSlash } from "react-icons/fa";
 import peer from "../Services/peer";
 import { openDevices } from "../Services/devices";
 import { useSocket } from "../useContext/SocketProvider";
 import { useNavigate, useParams } from "react-router-dom";
-import InviteForm from "./InviteForm";
 import CallStatus from "./CallStatus";
 import Preview from "./Preview";
-import ChatPanel, { ChatButton, useChatOpen } from "./ChatPanel";
+import ChatPanel, { useChatOpen } from "./ChatPanel";
+import ControlBar, { MeetingCard } from "./ControlBar";
 
 // What the other side last told us about their camera, mic and shared screen
 const MEDIA_ON = { video: true, audio: true, screen: false };
@@ -38,6 +38,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	const [callStart, setCallStart] = useState(null); // when the connection came up
 	const [reconnecting, setReconnecting] = useState(false);
 	const [copied, setCopied] = useState(false);
+	const [infoOpen, setInfoOpen] = useState(true); // the "Your meeting is ready" card
 
 	// idle | calling (we sent the offer) | active. Like Google Meet there is no ringing:
 	// once both people are in the room the call connects on its own
@@ -332,71 +333,35 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	const remoteSharing = showRemote && remoteMedia.screen && remoteScreen;
 	const bigStream = remoteSharing && !swapped ? remoteScreen : remoteStream;
 	const smallStream = bigStream === remoteStream ? remoteScreen : remoteStream;
+	const alone = !remoteSocketId;
+
+	// The meeting card shows while you wait alone and hides when someone joins; the info button toggles it
+	useEffect(() => setInfoOpen(!remoteSocketId), [remoteSocketId]);
 
 return (
-	<div className={`min-h-screen flex flex-col transition-colors duration-500 ${darkMode ? "bg-zinc-900 text-white" : "bg-gray-100 text-gray-900"}`}>
-		<header className="flex justify-between items-center p-5 shadow border-b">
-			<h2 className="text-2xl font-extrabold bg-gradient-to-r from-indigo-400 via-purple-500 to-pink-500 bg-clip-text text-transparent transition duration-300 hover:from-pink-500 hover:to-indigo-400">
-				Video Call Room
-			</h2>
-			<button
-				onClick={toggleDarkMode}
-				className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition duration-300"
-			>
-				{darkMode ? <FaSun size={20} /> : <FaMoon size={20} />}
-			</button>
-		</header>
-
-		<main className={`flex-grow flex flex-col items-center justify-center p-6 ${chatOpen ? "lg:pr-[26rem]" : ""}`}>
-			{!joined ? (
-				<Preview darkMode={darkMode} roomId={roomId} onJoin={handleJoin} />
-			) : (
-				<>
-					<div className="mb-6 text-center">
-						{!remoteSocketId ? (
-							<div className="flex flex-col items-center gap-4">
-							<div className="flex items-center justify-center gap-3">
-								<svg
-									className="animate-spin h-6 w-6 text-indigo-500"
-									xmlns="http://www.w3.org/2000/svg"
-									fill="none"
-									viewBox="0 0 24 24"
-								>
-									<circle
-										className="opacity-25"
-										cx="12"
-										cy="12"
-										r="10"
-										stroke="currentColor"
-										strokeWidth="4"
-									></circle>
-									<path
-										className="opacity-75"
-										fill="currentColor"
-										d="M4 12a8 8 0 018-8v8z"
-									></path>
-								</svg>
-								<span className="text-indigo-500 font-medium text-lg animate-pulse">
-									Waiting for the other participant to join...
-								</span>
-							</div>
-							<button
-								onClick={handleCopyLink}
-								className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-full flex items-center gap-2 shadow-sm transition-colors"
-							>
-								{copied ? <FaCheck /> : <FaLink />}
-								{copied ? "Link copied!" : "Copy invite link"}
-							</button>
-							<InviteForm roomId={roomId} darkMode={darkMode} />
-							</div>
-						) : (
-							<div className="px-4 py-2 rounded-full bg-green-100 text-green-800 font-semibold text-sm shadow inline-block max-w-full truncate">
-								In a call with {remoteName}
-							</div>
-						)}
-					</div>
-
-					<div className="relative w-full max-w-4xl h-[60vh] bg-black rounded-2xl overflow-hidden shadow-lg border-4 border-gray-700">
+	<div className={`${joined ? "h-[100dvh] overflow-hidden" : "min-h-screen"} flex flex-col transition-colors duration-500 ${darkMode ? "bg-zinc-900 text-white" : "bg-gray-100 text-gray-900"}`}>
+		{!joined ? (
+			<>
+				<header className="flex justify-between items-center p-5 shadow border-b">
+					<h2 className="text-2xl font-extrabold bg-gradient-to-r from-indigo-400 via-purple-500 to-pink-500 bg-clip-text text-transparent transition duration-300 hover:from-pink-500 hover:to-indigo-400">
+						Video Call Room
+					</h2>
+					<button
+						onClick={toggleDarkMode}
+						className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition duration-300"
+					>
+						{darkMode ? <FaSun size={20} /> : <FaMoon size={20} />}
+					</button>
+				</header>
+				<main className="flex-grow flex flex-col items-center justify-center p-6">
+					<Preview darkMode={darkMode} roomId={roomId} onJoin={handleJoin} />
+				</main>
+			</>
+		) : (
+			<>
+				{/* The stage fills the screen above the control bar: the page itself never scrolls */}
+				<main className={`flex-1 min-h-0 px-2 pt-2 sm:px-4 sm:pt-4 ${chatOpen ? "lg:pr-[26rem]" : ""}`}>
+					<div className="relative w-full h-full bg-black rounded-2xl overflow-hidden">
 						{/* Their sound plays here, so swapping the videos never cuts it */}
 						{showRemote && <audio autoPlay ref={(a) => a && a.srcObject !== remoteStream && (a.srcObject = remoteStream)} />}
 						{showRemote && (
@@ -442,7 +407,6 @@ return (
 								)}
 							</button>
 						)}
-						{callStart && <CallStatus connection={peer.peer} since={callStart} reconnecting={reconnecting} />}
 						{remoteSocketId && callState !== "active" && (
 							<div className="absolute inset-0 flex items-center justify-center p-6 text-center text-white">
 								<span className={`max-w-full text-xl ${notice ? "text-gray-300" : "font-semibold animate-pulse"}`}>
@@ -451,8 +415,9 @@ return (
 							</div>
 						)}
 						{myStream && (
-							<div className="absolute bottom-4 right-4 w-36 h-28 border-white border-2 rounded-lg overflow-hidden shadow-md">
-								{/* Your own camera, shown like a mirror (as in Google Meet); the other person gets the true picture */}
+							// Your own camera, shown like a mirror (as in Google Meet; the other person gets the true picture).
+							// Alone it fills the stage; with someone there it is a small tile bottom-right
+							<div className={alone ? "absolute inset-0" : "absolute bottom-3 right-3 z-10 w-32 sm:w-56 aspect-video border-white/70 border-2 rounded-lg overflow-hidden shadow-lg bg-zinc-800"}>
 								<video
 									autoPlay
 									muted
@@ -461,67 +426,44 @@ return (
 									ref={(v) => v && v.srcObject !== myStream && (v.srcObject = myStream)}
 								/>
 								{cameraOff && (
-									<div className="absolute inset-0 flex items-center justify-center bg-zinc-800 text-gray-300">
-										<FaVideoSlash size={24} />
+									<div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-zinc-800 text-gray-300">
+										<FaVideoSlash size={alone ? 40 : 24} />
+										{alone && <span>Your camera is off</span>}
 									</div>
 								)}
-								<span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-black/60 text-white text-xs">You</span>
+								{!alone && <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-black/60 text-white text-xs">You</span>}
 							</div>
 						)}
-					</div>
-
-					{isScreen && (
-						<div className="mt-4 px-4 py-2 rounded-full bg-indigo-100 text-indigo-800 font-semibold text-sm shadow flex items-center gap-2">
-							<FaDesktop /> You are sharing your screen
-						</div>
-					)}
-
-					<div className="mt-8 flex gap-4 flex-wrap justify-center">
-						{myStream && (
-							<>
-								<button
-									onClick={isScreen ? stopShare : startShare}
-									className={`${isScreen ? "bg-indigo-600 hover:bg-indigo-700" : "bg-gray-700 hover:bg-gray-600"} text-white px-5 py-2 rounded-full flex items-center gap-2 shadow-sm transition-transform hover:-translate-y-1`}
-								>
-									<FaDesktop />
-									{isScreen ? "Stop Sharing" : "Share Screen"}
-								</button>
-
-								<button
-									onClick={handleToggleCamera}
-									className="bg-gray-700 hover:bg-gray-600 text-white px-5 py-2 rounded-full flex items-center gap-2 shadow-sm transition-transform hover:-translate-y-1"
-								>
-									{cameraOff ? <FaVideoSlash /> : <FaVideo />}
-									{cameraOff ? "Start Video" : "Stop Video"}
-								</button>
-
-								<button
-									onClick={handleToggleMic}
-									className="bg-gray-700 hover:bg-gray-600 text-white px-5 py-2 rounded-full flex items-center gap-2 shadow-sm transition-transform hover:-translate-y-1"
-								>
-									{muted ? <FaMicrophoneSlash /> : <FaMicrophone />}
-									{muted ? "Unmute" : "Mute"}
-								</button>
-
-								<ChatButton />
-
-								<button
-									onClick={handleCutCall}
-									className="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-full flex items-center gap-2 shadow-md transition-transform hover:-translate-y-1"
-								>
-									<FaPhone /> End Call
-								</button>
-							</>
+						{isScreen && (
+							<div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 max-w-[calc(100%-2rem)] px-4 py-2 rounded-full bg-indigo-600 text-white text-sm font-semibold shadow flex items-center gap-2 whitespace-nowrap">
+								<FaDesktop className="shrink-0" /> You are sharing your screen
+							</div>
+						)}
+						{infoOpen && (
+							<MeetingCard darkMode={darkMode} roomId={roomId} alone={alone} copied={copied} onCopy={handleCopyLink} onClose={() => setInfoOpen(false)} />
 						)}
 					</div>
-					<ChatPanel darkMode={darkMode} remoteName={remoteName} />
-				</>
-			)}
-		</main>
+				</main>
+				<ControlBar
+					darkMode={darkMode}
+					roomId={roomId}
+					status={callStart && <CallStatus connection={peer.peer} since={callStart} reconnecting={reconnecting} />}
+					muted={muted}
+					cameraOff={cameraOff}
+					isScreen={isScreen}
+					infoOpen={infoOpen}
+					onToggleMic={handleToggleMic}
+					onToggleCamera={handleToggleCamera}
+					onToggleShare={isScreen ? stopShare : startShare}
+					onToggleInfo={() => setInfoOpen(!infoOpen)}
+					onToggleDarkMode={toggleDarkMode}
+					onLeave={handleCutCall}
+				/>
+				<ChatPanel darkMode={darkMode} remoteName={remoteName} />
+			</>
+		)}
 	</div>
 );
-
-
 };
 
 export default RoomPage; //main
