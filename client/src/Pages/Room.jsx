@@ -7,6 +7,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import InviteForm from "./InviteForm";
 import CallStatus from "./CallStatus";
 import Preview from "./Preview";
+import ChatPanel, { ChatButton, useChatOpen } from "./ChatPanel";
 
 // What the other side last told us about their camera and mic
 const MEDIA_ON = { video: true, audio: true };
@@ -38,6 +39,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	// once both people are in the room the call connects on its own
 	const [callState, setCallStateValue] = useState("idle");
 	const [notice, setNotice] = useState(null); // shown if connecting failed
+	const chatOpen = useChatOpen();
 
 	const myStreamRef = useRef(null);
 	const prefsRef = useRef({ videoId: "", audioId: "", cameraOff: false, muted: false }); // chosen on the preview
@@ -318,7 +320,7 @@ return (
 			</button>
 		</header>
 
-		<main className="flex-grow flex flex-col items-center justify-center p-6">
+		<main className={`flex-grow flex flex-col items-center justify-center p-6 ${chatOpen ? "lg:pr-[26rem]" : ""}`}>
 			{!joined ? (
 				<Preview darkMode={darkMode} roomId={roomId} onJoin={handleJoin} />
 			) : (
@@ -444,6 +446,8 @@ return (
 									{muted ? "Unmute" : "Mute"}
 								</button>
 
+								<ChatButton />
+
 								<button
 									onClick={handleCutCall}
 									className="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-full flex items-center gap-2 shadow-md transition-transform hover:-translate-y-1"
@@ -453,6 +457,7 @@ return (
 							</>
 						)}
 					</div>
+					<ChatPanel darkMode={darkMode} remoteName={remoteName} />
 				</>
 			)}
 		</main>
