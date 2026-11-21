@@ -102,6 +102,10 @@ io.on("connection", socket => {
   socket.on("ice:candidate", ({ to, candidate }) =>
     io.to(to).emit("ice:candidate", { from: socket.id, candidate })
   );
+  // Camera / mic on or off, so the other side can show a placeholder and a muted icon
+  socket.on("media:state", ({ to, video, audio }) =>
+    io.to(to).emit("media:state", { from: socket.id, video: video !== false, audio: audio !== false })
+  );
 
   // Email the room link to a guest; see invite.js for the rules
   socket.on("invite:send", async (payload, ack) => {
