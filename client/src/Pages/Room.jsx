@@ -1,10 +1,12 @@
 import React, { useEffect, useCallback, useRef, useState } from "react";
 import { FaMoon, FaSun, FaPhone, FaPhoneSlash, FaDesktop, FaVideo, FaVideoSlash, FaMicrophone, FaMicrophoneSlash, FaLink, FaCheck } from "react-icons/fa";
 import peer from "../Services/peer";
+import { openDevices } from "../Services/devices";
 import { useSocket } from "../useContext/SocketProvider";
 import { useNavigate, useParams } from "react-router-dom";
 import InviteForm from "./InviteForm";
 import CallStatus from "./CallStatus";
+import Preview from "./Preview";
 
 // What the other side last told us about their camera and mic
 const MEDIA_ON = { video: true, audio: true };
@@ -22,6 +24,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	const [remoteName, setRemoteName] = useState(null);
 	// Display name chosen on the Lobby (same key as Lobby.jsx). Read once: a rename in another tab must not re-join mid-call
 	const [myName] = useState(() => localStorage.getItem("sharethings.name"));
+	const [joined, setJoined] = useState(false); // false while on the preview
 
 	const [isScreen, setIsScreen] = useState(false);
 	const [muted, setMuted] = useState(false);
@@ -37,6 +40,8 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	const [notice, setNotice] = useState(null); // "Call declined", "No answer", ...
 
 	const myStreamRef = useRef(null);
+	const prefsRef = useRef({ videoId: "", audioId: "", cameraOff: false, muted: false }); // chosen on the preview
+	const tracksAddedRef = useRef(null); // the connection our tracks were added to
 	const callStateRef = useRef("idle"); // for socket handlers, which may run before a re-render
 	const iceServersRef = useRef([]); // from the last join, for a fresh connection after a declined call
 	const ringTimerRef = useRef(null);
@@ -77,13 +82,15 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		});
 	}, [socket, roomId, myName, navigate]);
 
+	// Room link opened without a name: ask for it on the Lobby first, which sends the user back here
+	useEffect(() => {
+		if (!myName) navigate(`/?room=${encodeURIComponent(roomId)}`, { replace: true });
+	}, [myName, roomId, navigate]);
+
+	// Join only after the preview, so nobody sees us before that.
 	// Leaving the page (e.g. browser Back) frees the camera, the connection and our place in the room
 	useEffect(() => {
-		// Room link opened without a name: ask for it on the Lobby first, which sends the user back here
-		if (!myName) {
-			navigate(`/?room=${encodeURIComponent(roomId)}`, { replace: true });
-			return;
-		}
+		if (!joined) return;
 		joinRoom();
 		return () => {
 			clearTimeout(ringTimerRef.current);
@@ -92,7 +99,17 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 			peer.reset();
 			socket.emit("room:leave", { room: roomId });
 		};
-	}, [joinRoom, socket, roomId, myName, navigate]);
+	}, [joined, joinRoom, socket, roomId]);
+
+	// The preview hands over its stream, so the call needs no second camera prompt
+	const handleJoin = (stream, prefs) => {
+		prefsRef.current = prefs;
+		myStreamRef.current = stream;
+		setMyStream(stream);
+		setCameraOff(prefs.cameraOff);
+		setMuted(prefs.muted);
+		setJoined(true);
+	};
 
 	// Send our ICE candidates to the other user and show their media when it arrives
 	useEffect(() => {
@@ -122,8 +139,8 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		setMyStream(null);
 		setRemoteStream(null);
 		setIsScreen(false);
-		setMuted(false);
-		setCameraOff(false);
+		setMuted(prefsRef.current.muted); // the next call starts as chosen on the preview
+		setCameraOff(prefsRef.current.cameraOff);
 		setRemoteMedia(MEDIA_ON);
 		setCallStart(null);
 		setReconnecting(false);
@@ -148,19 +165,28 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		return () => clearTimeout(id);
 	}, [notice]);
 
-	// Camera + mic, added to the connection once per call
+	// Camera + mic, added to the connection once per call: the preview's stream, or the chosen devices
+	// again after an earlier call ended (which turned the camera off)
 	const setupMedia = useCallback(async () => {
-		if (myStreamRef.current) return true;
 		const connection = peer.peer;
-		const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-		if (connection !== peer.peer) {
-			// The call ended while the camera prompt was open (e.g. browser Back): don't leave the camera on
-			stream.getTracks().forEach(t => t.stop());
-			return false;
+		let stream = myStreamRef.current;
+		if (!stream) {
+			const { videoId, audioId, cameraOff, muted } = prefsRef.current;
+			stream = await openDevices(videoId, audioId);
+			if (connection !== peer.peer) {
+				// The call ended while the camera prompt was open (e.g. browser Back): don't leave the camera on
+				stream.getTracks().forEach(t => t.stop());
+				return false;
+			}
+			stream.getVideoTracks().forEach(t => t.enabled = !cameraOff);
+			stream.getAudioTracks().forEach(t => t.enabled = !muted);
+			myStreamRef.current = stream;
+			setMyStream(stream);
 		}
-		myStreamRef.current = stream;
-		setMyStream(stream);
-		stream.getTracks().forEach(t => peer.peer.addTrack(t, stream));
+		if (tracksAddedRef.current !== connection) {
+			stream.getTracks().forEach(t => connection.addTrack(t, stream));
+			tracksAddedRef.current = connection;
+		}
 		return true;
 	}, []);
 
@@ -261,8 +287,9 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		setRemoteMedia({ video: video !== false, audio: audio !== false });
 	}, []);
 
-	// Socket events
+	// Socket events, once joined (a reconnect while on the preview must not join the room)
 	useEffect(() => {
+		if (!joined) return;
 		socket.on("user:joined", handleUserJoined);
 		socket.on("user:left", handleUserLeft);
 		socket.on("incomming:call", handleIncomingCall);
@@ -283,14 +310,14 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 			socket.off("media:state", handleMediaState);
 			socket.io.off("reconnect", handleUserLeft);
 		};
-	}, [socket, handleUserJoined, handleUserLeft, handleIncomingCall, handleCallAccepted, handleCallDeclined, handleCallCancelled, handleIceCandidate, handleMediaState]);
+	}, [joined, socket, handleUserJoined, handleUserLeft, handleIncomingCall, handleCallAccepted, handleCallDeclined, handleCallCancelled, handleIceCandidate, handleMediaState]);
 
 	// Switch between screen & camera: only the video track is swapped, the mic keeps running
 	const switchVideo = async toScreen => {
 		try {
 			const source = toScreen
 				? await navigator.mediaDevices.getDisplayMedia({ video: true })
-				: await navigator.mediaDevices.getUserMedia({ video: true });
+				: await openDevices(prefsRef.current.videoId, null, { audio: false });
 			const [track] = source.getVideoTracks();
 			const current = myStreamRef.current;
 			if (!current) return track.stop();
@@ -343,173 +370,183 @@ return (
 		</header>
 
 		<main className="flex-grow flex flex-col items-center justify-center p-6">
-			<div className="mb-6 text-center">
-				{!remoteSocketId ? (
-					<div className="flex flex-col items-center gap-4">
-					<div className="flex items-center justify-center gap-3">
-						<svg
-							className="animate-spin h-6 w-6 text-indigo-500"
-							xmlns="http://www.w3.org/2000/svg"
-							fill="none"
-							viewBox="0 0 24 24"
-						>
-							<circle
-								className="opacity-25"
-								cx="12"
-								cy="12"
-								r="10"
-								stroke="currentColor"
-								strokeWidth="4"
-							></circle>
-							<path
-								className="opacity-75"
-								fill="currentColor"
-								d="M4 12a8 8 0 018-8v8z"
-							></path>
-						</svg>
-						<span className="text-indigo-500 font-medium text-lg animate-pulse">
-							Waiting for the other participant to join...
-						</span>
-					</div>
-					<button
-						onClick={handleCopyLink}
-						className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-full flex items-center gap-2 shadow-sm transition-colors"
-					>
-						{copied ? <FaCheck /> : <FaLink />}
-						{copied ? "Link copied!" : "Copy invite link"}
-					</button>
-					<InviteForm roomId={roomId} darkMode={darkMode} />
-					</div>
-				) : (
-					<div className="px-4 py-2 rounded-full bg-green-100 text-green-800 font-semibold text-sm shadow inline-block max-w-full truncate">
-						In a call with {remoteName}
-					</div>
-				)}
-			</div>
-
-			<div className="relative w-full max-w-4xl h-[60vh] bg-black rounded-2xl overflow-hidden shadow-lg border-4 border-gray-700">
-				{showRemote && (
-					<video
-						autoPlay
-						playsInline
-						className="w-full h-full object-contain"
-						ref={(v) => v && v.srcObject !== remoteStream && (v.srcObject = remoteStream)}
-					/>
-				)}
-				{showRemote && !remoteMedia.video && (
-					<div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-zinc-800 text-gray-300">
-						<FaVideoSlash size={40} />
-						<span>Camera off</span>
-					</div>
-				)}
-				{showRemote && (remoteName || !remoteMedia.audio) && (
-					<span className="absolute bottom-4 left-4 max-w-[calc(100%-12rem)] flex items-center gap-1.5 px-2 py-1 rounded bg-black/60 text-white text-sm">
-						{!remoteMedia.audio && <FaMicrophoneSlash className="shrink-0 text-red-400" title="Muted" />}
-						<span className="truncate">{remoteName}</span>
-					</span>
-				)}
-				{callStart && <CallStatus connection={peer.peer} since={callStart} reconnecting={reconnecting} />}
-				{(incomingFrom || callState === "calling" || (callState === "idle" && notice)) && (
-					<div className="absolute inset-0 flex flex-col items-center justify-center gap-6 p-6 text-center text-white">
-						{incomingFrom ? (
-							<>
-								<span className="max-w-full truncate text-2xl font-semibold">{remoteName || "Someone"} is calling</span>
-								<div className="flex gap-4">
-									<button
-										onClick={handleAccept}
-										className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-full flex items-center gap-2 shadow-md transition-transform hover:-translate-y-1"
-									>
-										<FaPhone /> Accept
-									</button>
-									<button
-										onClick={handleDecline}
-										className="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-full flex items-center gap-2 shadow-md transition-transform hover:-translate-y-1"
-									>
-										<FaPhoneSlash /> Decline
-									</button>
-								</div>
-							</>
-						) : callState === "calling" ? (
-							<>
-								<span className="max-w-full truncate text-2xl font-semibold animate-pulse">Calling {remoteName}...</span>
-								<button
-									onClick={handleCancelCall}
-									className="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-full flex items-center gap-2 shadow-md transition-transform hover:-translate-y-1"
+			{!joined ? (
+				<Preview darkMode={darkMode} onJoin={handleJoin} />
+			) : (
+				<>
+					<div className="mb-6 text-center">
+						{!remoteSocketId ? (
+							<div className="flex flex-col items-center gap-4">
+							<div className="flex items-center justify-center gap-3">
+								<svg
+									className="animate-spin h-6 w-6 text-indigo-500"
+									xmlns="http://www.w3.org/2000/svg"
+									fill="none"
+									viewBox="0 0 24 24"
 								>
-									<FaPhoneSlash /> Cancel
-								</button>
-							</>
+									<circle
+										className="opacity-25"
+										cx="12"
+										cy="12"
+										r="10"
+										stroke="currentColor"
+										strokeWidth="4"
+									></circle>
+									<path
+										className="opacity-75"
+										fill="currentColor"
+										d="M4 12a8 8 0 018-8v8z"
+									></path>
+								</svg>
+								<span className="text-indigo-500 font-medium text-lg animate-pulse">
+									Waiting for the other participant to join...
+								</span>
+							</div>
+							<button
+								onClick={handleCopyLink}
+								className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-full flex items-center gap-2 shadow-sm transition-colors"
+							>
+								{copied ? <FaCheck /> : <FaLink />}
+								{copied ? "Link copied!" : "Copy invite link"}
+							</button>
+							<InviteForm roomId={roomId} darkMode={darkMode} />
+							</div>
 						) : (
-							<span className="text-xl text-gray-300">{notice}</span>
-						)}
-					</div>
-				)}
-				{myStream && (
-					<div className="absolute bottom-4 right-4 w-36 h-28 border-white border-2 rounded-lg overflow-hidden shadow-md">
-						<video
-							autoPlay
-							muted
-							playsInline
-							className="w-full h-full object-cover"
-							ref={(v) => v && v.srcObject !== myStream && (v.srcObject = myStream)}
-						/>
-						{cameraOff && !isScreen && (
-							<div className="absolute inset-0 flex items-center justify-center bg-zinc-800 text-gray-300">
-								<FaVideoSlash size={24} />
+							<div className="px-4 py-2 rounded-full bg-green-100 text-green-800 font-semibold text-sm shadow inline-block max-w-full truncate">
+								In a call with {remoteName}
 							</div>
 						)}
-						<span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-black/60 text-white text-xs">You</span>
 					</div>
-				)}
-			</div>
 
-			<div className="mt-8 flex gap-4 flex-wrap justify-center">
-				{callState === "idle" && remoteSocketId && (
-					<button
-						onClick={handleCallUser}
-						className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-full flex items-center gap-2 shadow-md transition-transform hover:-translate-y-1"
-					>
-						<FaPhone /> Call
-					</button>
-				)}
+					<div className="relative w-full max-w-4xl h-[60vh] bg-black rounded-2xl overflow-hidden shadow-lg border-4 border-gray-700">
+						{showRemote && (
+							<video
+								autoPlay
+								playsInline
+								className="w-full h-full object-contain"
+								ref={(v) => v && v.srcObject !== remoteStream && (v.srcObject = remoteStream)}
+							/>
+						)}
+						{showRemote && !remoteMedia.video && (
+							<div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-zinc-800 text-gray-300">
+								<FaVideoSlash size={40} />
+								<span>Camera off</span>
+							</div>
+						)}
+						{showRemote && (remoteName || !remoteMedia.audio) && (
+							<span className="absolute bottom-4 left-4 max-w-[calc(100%-12rem)] flex items-center gap-1.5 px-2 py-1 rounded bg-black/60 text-white text-sm">
+								{!remoteMedia.audio && <FaMicrophoneSlash className="shrink-0 text-red-400" title="Muted" />}
+								<span className="truncate">{remoteName}</span>
+							</span>
+						)}
+						{callStart && <CallStatus connection={peer.peer} since={callStart} reconnecting={reconnecting} />}
+						{(incomingFrom || callState === "calling" || (callState === "idle" && notice)) && (
+							<div className="absolute inset-0 flex flex-col items-center justify-center gap-6 p-6 text-center text-white">
+								{incomingFrom ? (
+									<>
+										<span className="max-w-full truncate text-2xl font-semibold">{remoteName || "Someone"} is calling</span>
+										<div className="flex gap-4">
+											<button
+												onClick={handleAccept}
+												className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-full flex items-center gap-2 shadow-md transition-transform hover:-translate-y-1"
+											>
+												<FaPhone /> Accept
+											</button>
+											<button
+												onClick={handleDecline}
+												className="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-full flex items-center gap-2 shadow-md transition-transform hover:-translate-y-1"
+											>
+												<FaPhoneSlash /> Decline
+											</button>
+										</div>
+									</>
+								) : callState === "calling" ? (
+									<>
+										<span className="max-w-full truncate text-2xl font-semibold animate-pulse">Calling {remoteName}...</span>
+										<button
+											onClick={handleCancelCall}
+											className="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-full flex items-center gap-2 shadow-md transition-transform hover:-translate-y-1"
+										>
+											<FaPhoneSlash /> Cancel
+										</button>
+									</>
+								) : (
+									<span className="text-xl text-gray-300">{notice}</span>
+								)}
+							</div>
+						)}
+						{myStream && (
+							<div className="absolute bottom-4 right-4 w-36 h-28 border-white border-2 rounded-lg overflow-hidden shadow-md">
+								<video
+									autoPlay
+									muted
+									playsInline
+									className="w-full h-full object-cover"
+									ref={(v) => v && v.srcObject !== myStream && (v.srcObject = myStream)}
+								/>
+								{cameraOff && !isScreen && (
+									<div className="absolute inset-0 flex items-center justify-center bg-zinc-800 text-gray-300">
+										<FaVideoSlash size={24} />
+									</div>
+								)}
+								<span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-black/60 text-white text-xs">You</span>
+							</div>
+						)}
+					</div>
 
-				{myStream && callState === "active" && (
-					<>
-						<button
-							onClick={() => switchVideo(!isScreen)}
-							className="bg-gray-700 hover:bg-gray-600 text-white px-5 py-2 rounded-full flex items-center gap-2 shadow-sm transition-transform hover:-translate-y-1"
-						>
-							{isScreen ? <FaVideo /> : <FaDesktop />}
-							{isScreen ? "Use Camera" : "Share Screen"}
-						</button>
+					<div className="mt-8 flex gap-4 flex-wrap justify-center">
+						{callState === "idle" && remoteSocketId && (
+							<button
+								onClick={handleCallUser}
+								className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-full flex items-center gap-2 shadow-md transition-transform hover:-translate-y-1"
+							>
+								<FaPhone /> Call
+							</button>
+						)}
 
-						<button
-							onClick={handleToggleCamera}
-							disabled={isScreen}
-							title={isScreen ? "Stop sharing your screen first" : undefined}
-							className="bg-gray-700 hover:bg-gray-600 text-white px-5 py-2 rounded-full flex items-center gap-2 shadow-sm transition-transform hover:-translate-y-1 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0"
-						>
-							{cameraOff ? <FaVideoSlash /> : <FaVideo />}
-							{cameraOff ? "Start Video" : "Stop Video"}
-						</button>
+						{myStream && (
+							<>
+								{callState === "active" && (
+									<button
+										onClick={() => switchVideo(!isScreen)}
+										className="bg-gray-700 hover:bg-gray-600 text-white px-5 py-2 rounded-full flex items-center gap-2 shadow-sm transition-transform hover:-translate-y-1"
+									>
+										{isScreen ? <FaVideo /> : <FaDesktop />}
+										{isScreen ? "Use Camera" : "Share Screen"}
+									</button>
+								)}
 
-						<button
-							onClick={handleToggleMic}
-							className="bg-gray-700 hover:bg-gray-600 text-white px-5 py-2 rounded-full flex items-center gap-2 shadow-sm transition-transform hover:-translate-y-1"
-						>
-							{muted ? <FaMicrophoneSlash /> : <FaMicrophone />}
-							{muted ? "Unmute" : "Mute"}
-						</button>
+								<button
+									onClick={handleToggleCamera}
+									disabled={isScreen}
+									title={isScreen ? "Stop sharing your screen first" : undefined}
+									className="bg-gray-700 hover:bg-gray-600 text-white px-5 py-2 rounded-full flex items-center gap-2 shadow-sm transition-transform hover:-translate-y-1 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0"
+								>
+									{cameraOff ? <FaVideoSlash /> : <FaVideo />}
+									{cameraOff ? "Start Video" : "Stop Video"}
+								</button>
 
-						<button
-							onClick={handleCutCall}
-							className="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-full flex items-center gap-2 shadow-md transition-transform hover:-translate-y-1"
-						>
-							<FaPhone /> End Call
-						</button>
-					</>
-				)}
-			</div>
+								<button
+									onClick={handleToggleMic}
+									className="bg-gray-700 hover:bg-gray-600 text-white px-5 py-2 rounded-full flex items-center gap-2 shadow-sm transition-transform hover:-translate-y-1"
+								>
+									{muted ? <FaMicrophoneSlash /> : <FaMicrophone />}
+									{muted ? "Unmute" : "Mute"}
+								</button>
+
+								{callState === "active" && (
+									<button
+										onClick={handleCutCall}
+										className="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-full flex items-center gap-2 shadow-md transition-transform hover:-translate-y-1"
+									>
+										<FaPhone /> End Call
+									</button>
+								)}
+							</>
+						)}
+					</div>
+				</>
+			)}
 		</main>
 	</div>
 );
