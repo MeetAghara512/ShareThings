@@ -1,13 +1,14 @@
 import React, { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { FaComments, FaDownload, FaFileAlt, FaPaperPlane, FaPaperclip, FaTimes } from "react-icons/fa";
 import * as chat from "../Services/chat";
+import * as files from "../Services/files";
 
 const useChat = () => useSyncExternalStore(chat.subscribe, chat.getState);
 // On wide screens the room makes space for the open panel, so it never covers the call controls
 export const useChatOpen = () => useChat().open;
 
 const formatSize = bytes =>
-	bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+	bytes < 1024 ? `${Math.round(bytes)} B` : bytes < 1024 ** 2 ? `${(bytes / 1024).toFixed(1)} KB` : bytes < 1024 ** 3 ? `${(bytes / 1024 ** 2).toFixed(1)} MB` : `${(bytes / 1024 ** 3).toFixed(2)} GB`;
 const formatTime = at => new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
 // The Chat button in the call's button row, with the number of unread messages and files
@@ -39,17 +40,26 @@ export const ChatButton = () => {
 	);
 };
 
-const FileItem = ({ item }) => {
-	const active = item.status === "queued" || item.status === "sending" || item.status === "receiving";
+const formatDuration = seconds =>
+	seconds < 60 ? "under a minute" : seconds < 3600 ? `${Math.round(seconds / 60)} min` : `${Math.floor(seconds / 3600)} h ${Math.round((seconds % 3600) / 60)} min`;
+
+const LABELS = { queued: "Waiting to send", preparing: "Preparing...", waiting: "Waiting to continue", sent: "Sent", done: "Received", saved: "Saved", declined: "Declined", cancelled: "Cancelled" };
+
+const FileItem = ({ item, remoteName }) => {
 	const percent = Math.min(100, Math.floor((item.done / item.size) * 100)) || 0;
-	const label = {
-		queued: "Waiting...",
-		sending: `${percent}%`,
-		receiving: `${percent}%`,
-		sent: "Sent",
-		done: "Received",
-		cancelled: "Cancelled",
-	}[item.status] ?? item.note;
+	const moving = item.status === "sending" || item.status === "receiving";
+	const left = item.speed > 0 && (item.size - item.done) / item.speed;
+	const label = moving
+		? [`${percent}%`, left !== false && `${formatSize(item.speed)}/s`, left !== false && `${formatDuration(left)} left`].filter(Boolean).join(" \u00b7 ")
+		: item.status === "paused" ? `Paused at ${percent}%`
+		: item.status === "offered" ? (item.mine ? `Waiting for ${remoteName || "the other person"} to accept` : item.eta ? `${item.rough ? "Up to" : "About"} ${formatDuration(item.eta)} to receive` : "Wants to send you this file")
+		: item.note || LABELS[item.status];
+	const actions = item.status === "offered" && !item.mine ? [["Accept", files.accept, true], ["Decline", files.decline]]
+		: item.status === "relay" ? [["Send anyway", files.sendAnyway, true], ["Cancel", files.cancel]]
+		: moving ? [["Pause", files.pause], ["Cancel", files.cancel]]
+		: item.status === "paused" ? [["Resume", files.resume, true], ["Cancel", files.cancel]]
+		: ["queued", "preparing", "offered", "waiting"].includes(item.status) ? [["Cancel", files.cancel]]
+		: [];
 
 	return (
 		<div className="w-56 max-w-full space-y-1.5">
@@ -57,27 +67,33 @@ const FileItem = ({ item }) => {
 				<FaFileAlt className="shrink-0 opacity-80" />
 				<span className="truncate font-medium" title={item.fileName}>{item.fileName}</span>
 			</div>
-			<div className="flex items-center justify-between gap-2 text-xs">
+			<p className="text-xs">
 				<span className="opacity-80">{formatSize(item.size)}</span>
-				<span className={item.status === "failed" ? "text-red-400 font-medium" : "opacity-80"}>{label}</span>
-			</div>
-			{active && (
-				<div className="flex items-center gap-2">
-					<div
-						role="progressbar"
-						aria-label={`${item.fileName} progress`}
-						aria-valuemin={0}
-						aria-valuemax={100}
-						aria-valuenow={percent}
-						className="flex-1 h-1.5 rounded-full bg-black/20 overflow-hidden"
-					>
-						<div className="h-full bg-green-500 transition-[width]" style={{ width: `${percent}%` }} />
-					</div>
-					{item.cancellable !== false && (
-						<button onClick={() => chat.cancelFile(item.id)} className="text-xs font-semibold underline-offset-2 hover:underline">
-							Cancel
+				{label && <span className={item.status === "failed" ? "text-red-400 font-medium" : "opacity-80"}>{" \u00b7 "}{label}</span>}
+			</p>
+			{(moving || item.status === "paused" || item.status === "waiting") && (
+				<div
+					role="progressbar"
+					aria-label={`${item.fileName} progress`}
+					aria-valuemin={0}
+					aria-valuemax={100}
+					aria-valuenow={percent}
+					className="h-1.5 rounded-full bg-black/20 overflow-hidden"
+				>
+					<div className="h-full bg-green-500 transition-[width]" style={{ width: `${percent}%` }} />
+				</div>
+			)}
+			{actions.length > 0 && (
+				<div className="flex flex-wrap gap-1.5">
+					{actions.map(([text, action, primary]) => (
+						<button
+							key={text}
+							onClick={() => action(item.id)}
+							className={`px-3 py-1 rounded-full text-xs font-semibold ${primary ? "bg-green-600 hover:bg-green-700 text-white" : "bg-black/15 hover:bg-black/25"}`}
+						>
+							{text}
 						</button>
-					)}
+					))}
 				</div>
 			)}
 			{/* Saved only on click, never opened by the page */}
@@ -116,12 +132,12 @@ const ChatPanel = ({ darkMode, remoteName }) => {
 		if (chat.sendText(text)) setText("");
 	};
 	const handlePick = e => {
-		chat.sendFiles([...e.target.files]);
+		files.sendFiles([...e.target.files]);
 		e.target.value = ""; // the same file can be picked again
 	};
 	const handleDrop = e => {
 		e.preventDefault();
-		if (ready) chat.sendFiles([...e.dataTransfer.files]);
+		if (ready) files.sendFiles([...e.dataTransfer.files]);
 	};
 
 	const muted = darkMode ? "text-gray-400" : "text-gray-500";
@@ -148,7 +164,7 @@ const ChatPanel = ({ darkMode, remoteName }) => {
 
 			<div ref={listRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-3 text-sm">
 				<p className={`text-xs text-center ${muted}`}>
-					Messages and files go straight to the other person and are not saved anywhere. Only open files from people you trust.
+					Messages and files go straight to the other person and are not stored on any server. Only open files from people you trust.
 				</p>
 				{items.map(item => item.kind === "note" ? (
 					<p key={item.id} className={`text-xs text-center ${muted}`}>{item.text}</p>
@@ -160,7 +176,7 @@ const ChatPanel = ({ darkMode, remoteName }) => {
 						<div className={`max-w-[85%] px-3 py-2 rounded-2xl whitespace-pre-wrap [overflow-wrap:anywhere] ` +
 							(item.mine ? "bg-indigo-600 text-white" : darkMode ? "bg-gray-700" : "bg-gray-100")}
 						>
-							{item.kind === "text" ? item.text : <FileItem item={item} />}
+							{item.kind === "text" ? item.text : <FileItem item={item} remoteName={remoteName} />}
 						</div>
 					</div>
 				))}
@@ -174,7 +190,7 @@ const ChatPanel = ({ darkMode, remoteName }) => {
 						onClick={() => fileRef.current?.click()}
 						disabled={!ready}
 						aria-label="Send a file"
-						title="Send a file (up to 100 MB)"
+						title="Send a file"
 						className={`${iconButton} ${darkMode ? "hover:bg-gray-700" : "hover:bg-gray-100"}`}
 					>
 						<FaPaperclip />

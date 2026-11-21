@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { setCallStats } from "../Services/files";
 
 // m:ss, or h:mm:ss after an hour
 const formatDuration = seconds => {
@@ -18,7 +19,8 @@ const QUALITY = {
 const rateQuality = (rtt, loss) =>
 	rtt < 0.15 && loss < 0.02 ? "good" : rtt < 0.4 && loss < 0.08 ? "fair" : "poor";
 
-// RTT of the candidate pair in use, plus video packets received and lost so far
+// RTT of the candidate pair in use, plus video packets received and lost so far. Also whether the
+// pair goes through a relay server, and its estimated upload speed (for file sharing)
 const readStats = report => {
 	let pair;
 	let received = 0;
@@ -32,7 +34,8 @@ const readStats = report => {
 	});
 	// Firefox has no transport stats and flags the pair instead
 	if (!pair) report.forEach(s => { if (s.type === "candidate-pair" && s.selected) pair = s; });
-	return { rtt: pair?.currentRoundTripTime, received, lost };
+	const relay = [pair?.localCandidateId, pair?.remoteCandidateId].some(id => report.get(id)?.candidateType === "relay");
+	return { rtt: pair?.currentRoundTripTime, received, lost, relay, bitrate: pair?.availableOutgoingBitrate };
 };
 
 // Call timer and connection quality; mounted only while the call is connected
@@ -61,11 +64,15 @@ const CallStatus = ({ connection, since, reconnecting }) => {
 			const lost = Math.max(0, stats.lost - last.lost);
 			last = stats;
 			const loss = received + lost > 0 ? lost / (received + lost) : 0;
-			if (stats.rtt !== undefined) setQuality(rateQuality(stats.rtt, loss));
+			if (stats.rtt === undefined) return;
+			const rated = rateQuality(stats.rtt, loss);
+			setQuality(rated);
+			setCallStats({ quality: rated, relay: stats.relay, bitrate: stats.bitrate }); // files slow down when Poor
 		}, 2000);
 		return () => {
 			active = false;
 			clearInterval(id);
+			setCallStats(null);
 		};
 	}, [connection]);
 
