@@ -1,36 +1,21 @@
-import React, { useState, useCallback, useEffect } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import React, { useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { FaMoon, FaSun } from "react-icons/fa";
 import { useAuth, GoogleSignInButton } from "../useContext/AuthProvider";
 
-// Last display name used on this browser. Room.jsx reads the same key.
-const NAME_KEY = "sharethings.name";
-
 const Lobby = ({ darkMode, toggleDarkMode }) => {
 	const { user, signOut } = useAuth();
-	const [searchParams] = useSearchParams();
-	// A room link opened without a saved name lands here as /?room=<id>
-	const [room, setRoom] = useState(() => searchParams.get("room") || "");
-	const [name, setName] = useState(() => localStorage.getItem(NAME_KEY) || user?.name || "");
+	const [room, setRoom] = useState("");
 	const navigate = useNavigate();
-
-	// Signing in suggests the Google name, but never replaces what is already in the field
-	const googleName = user?.name;
-	useEffect(() => {
-		if (googleName) setName(current => current || googleName);
-	}, [googleName]);
 
 	const handleSubmit = useCallback(
 		(e) => {
 			e.preventDefault();
-			const displayName = name.trim();
-			if (!displayName) return;
-			localStorage.setItem(NAME_KEY, displayName);
 			// No room entered: create a new one with a random ID
 			const roomId = room.trim() || crypto.randomUUID().slice(0, 8);
 			navigate(`/room/${encodeURIComponent(roomId)}`);
 		},
-		[name, room, navigate]
+		[room, navigate]
 	);
 
 	return (
@@ -85,29 +70,6 @@ const Lobby = ({ darkMode, toggleDarkMode }) => {
 								<p className="opacity-60">Optional. You can join a call without signing in.</p>
 							</>
 						)}
-					</div>
-
-					<div className="space-y-2">
-						<label htmlFor="name" className="block text-sm font-medium">
-							Your name
-						</label>
-						<input
-							type="text"
-							id="name"
-							placeholder="Shown to the other person"
-							value={name}
-							onChange={(e) => setName(e.target.value)}
-							required
-							pattern=".*\S.*"
-							title="Enter your name"
-							maxLength={40}
-							autoComplete="name"
-							className={`w-full px-4 py-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-indigo-400 transition-all duration-300 text-sm ` +
-								(darkMode
-									? "bg-gray-700 border-gray-600 placeholder-gray-400 focus:border-indigo-500"
-									: "border-gray-300 placeholder-gray-500 focus:border-indigo-600 hover:border-indigo-400")
-							}
-						/>
 					</div>
 
 					<div className="space-y-2">

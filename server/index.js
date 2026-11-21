@@ -119,6 +119,15 @@ io.on("connection", socket => {
     if (typeof ack === "function") ack(result);
   });
 
+  // Names of the people in a room, for the join screen. Does not join it.
+  socket.on("room:peek", ({ room }, ack) => {
+    if (typeof room !== "string" || !room || typeof ack !== "function") return;
+    // Every socket also sits in a room named after its own id; never report on those
+    const ids = io.sockets.sockets.has(room) ? [] : [...(io.sockets.adapter.rooms.get(room) ?? [])];
+    const others = ids.filter(id => id !== socket.id);
+    ack({ names: others.map(id => io.sockets.sockets.get(id)?.data.name ?? "Guest"), full: others.length >= MAX_ROOM_SIZE });
+  });
+
   socket.on("room:leave", ({ room }) => {
     if (room === socket.id || !socket.rooms.has(room)) return;
     socket.to(room).emit("user:left", { id: socket.id });
