@@ -2,6 +2,7 @@ import React, { useEffect, useCallback, useRef, useState } from "react";
 import { FaMoon, FaSun, FaPhone, FaDesktop, FaVideo, FaVideoSlash, FaMicrophone, FaMicrophoneSlash, FaLink, FaCheck } from "react-icons/fa";
 import peer from "../Services/peer";
 import recovery from "../Services/recovery";
+import clientId from "../Services/clientId";
 import { openDevices } from "../Services/devices";
 import { useSocket } from "../useContext/SocketProvider";
 import { useNavigate, useParams } from "react-router-dom";
@@ -48,6 +49,8 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	const iceServersRef = useRef([]); // from the last join, for a fresh connection after a declined call
 	const autoCalledRef = useRef(null); // the person we already started a call with, so a failure is not retried in a loop
 	const connectTimerRef = useRef(null);
+	const remoteSeatRef = useRef(null); // the other person's seat: the same when their connection drops and comes back
+	const serverRef = useRef(null); // which run of the server we joined, to notice a restart
 
 	const setCallState = useCallback(state => {
 		callStateRef.current = state;
@@ -73,12 +76,14 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 
 	// Join the room; the server replies with who is already there and the ICE servers to use
 	const joinRoom = useCallback(() => {
-		socket.emit("room:join", { room: roomId, name: myName }, ({ full, peerId, peerName, iceServers }) => {
+		socket.emit("room:join", { room: roomId, name: myName, clientId }, ({ full, peerId, peerName, peerSeat, server, iceServers }) => {
 			if (full) {
 				alert("This room is full.");
 				return navigate("/");
 			}
 			iceServersRef.current = iceServers;
+			serverRef.current = server;
+			remoteSeatRef.current = peerSeat;
 			peer.reset(iceServers);
 			setRemoteSocketId(peerId);
 			setRemoteName(peerName);
@@ -128,7 +133,8 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		if (callStart && remoteSocketId) socket.emit("media:state", { to: remoteSocketId, video: videoOn, audio: !muted });
 	}, [socket, remoteSocketId, callStart, videoOn, muted]);
 
-	const handleUserJoined = useCallback(({ id, name }) => {
+	const handleUserJoined = useCallback(({ id, name, seat }) => {
+		remoteSeatRef.current = seat ?? null;
 		setRemoteSocketId(id);
 		setRemoteName(name);
 	}, []);
@@ -293,6 +299,48 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 
 	useEffect(() => () => recovery.stop(), []); // leaving the room
 
+	// Our signaling connection dropped and came back during a call. Take our seat back (same tab id) and keep
+	// the call if the other person is still the one we talk to: the server kept our seat, or it restarted and
+	// forgot everyone. Otherwise the call is over on their side, so start fresh with whoever is in the room
+	const rejoinRoom = useCallback(() => {
+		socket.emit("room:join", { room: roomId, name: myName, clientId, resume: true }, ({ full, peerId, peerName, peerSeat, peerHeld, resumed, server, iceServers }) => {
+			if (full) {
+				alert("This room is full.");
+				return navigate("/");
+			}
+			const restarted = server !== serverRef.current;
+			serverRef.current = server;
+			iceServersRef.current = iceServers;
+			const samePerson = peerId ? peerSeat === remoteSeatRef.current : resumed ? peerHeld : restarted;
+			if ((resumed || restarted) && samePerson) {
+				try {
+					peer.peer.setConfiguration({ ...peer.peer.getConfiguration(), iceServers }); // fresh TURN login for ICE restarts
+				} catch (e) {
+					console.error("ICE servers not updated", e);
+				}
+				if (peerId && peerId !== recovery.peerId) setRemoteSocketId(peerId); // their new id; retried once it is set
+				else recovery.retryNow();
+				return;
+			}
+			recovery.stop();
+			resetCall();
+			autoCalledRef.current = null;
+			remoteSeatRef.current = peerSeat;
+			setRemoteSocketId(peerId);
+			setRemoteName(peerName);
+		});
+	}, [socket, roomId, myName, navigate, resetCall]);
+
+	const handleReconnect = useCallback(() => (callStateRef.current === "active" ? rejoinRoom() : handleUserLeft()), [rejoinRoom, handleUserLeft]);
+
+	// Closing or reloading the tab is leaving on purpose: free our seat now, not after the grace period (best effort)
+	useEffect(() => {
+		if (!joined) return;
+		const leave = () => socket.emit("room:leave", { room: roomId });
+		window.addEventListener("pagehide", leave);
+		return () => window.removeEventListener("pagehide", leave);
+	}, [joined, socket, roomId]);
+
 	// Socket events, once joined (a reconnect while on the preview must not join the room)
 	useEffect(() => {
 		if (!joined) return;
@@ -302,7 +350,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		socket.on("call:accepted", handleCallAccepted);
 		socket.on("ice:candidate", handleIceCandidate);
 		socket.on("media:state", handleMediaState);
-		socket.io.on("reconnect", handleUserLeft);
+		socket.io.on("reconnect", handleReconnect);
 		return () => {
 			socket.off("user:joined", handleUserJoined);
 			socket.off("user:left", handleUserLeft);
@@ -310,9 +358,9 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 			socket.off("call:accepted", handleCallAccepted);
 			socket.off("ice:candidate", handleIceCandidate);
 			socket.off("media:state", handleMediaState);
-			socket.io.off("reconnect", handleUserLeft);
+			socket.io.off("reconnect", handleReconnect);
 		};
-	}, [joined, socket, handleUserJoined, handleUserLeft, handleIncomingCall, handleCallAccepted, handleIceCandidate, handleMediaState]);
+	}, [joined, socket, handleUserJoined, handleUserLeft, handleIncomingCall, handleCallAccepted, handleIceCandidate, handleMediaState, handleReconnect]);
 
 	// Switch between screen & camera: only the video track is swapped, the mic keeps running
 	const switchVideo = async toScreen => {

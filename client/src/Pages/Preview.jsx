@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { FaVideo, FaVideoSlash, FaMicrophone, FaMicrophoneSlash, FaRedo } from "react-icons/fa";
 import { openDevices } from "../Services/devices";
+import clientId from "../Services/clientId";
 import { useSocket } from "../useContext/SocketProvider";
 import { useAuth } from "../useContext/AuthProvider";
 
@@ -153,7 +154,7 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 
 	// Who is already in the room, kept fresh while this screen is open
 	useEffect(() => {
-		const check = () => socket.emit("room:peek", { room: roomId }, setPeek);
+		const check = () => socket.emit("room:peek", { room: roomId, clientId }, setPeek); // our own kept seat does not count
 		check();
 		const id = setInterval(check, PEEK_INTERVAL);
 		return () => clearInterval(id);
