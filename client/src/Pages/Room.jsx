@@ -9,8 +9,10 @@ import CallStatus from "./CallStatus";
 import Preview from "./Preview";
 import ChatPanel, { ChatButton, useChatOpen } from "./ChatPanel";
 
-// What the other side last told us about their camera and mic
-const MEDIA_ON = { video: true, audio: true };
+// What the other side last told us about their camera, mic and shared screen
+const MEDIA_ON = { video: true, audio: true, screen: false };
+// While the screen is shared the camera only fills a small tile, so the screen gets the bandwidth
+const CAMERA_WHILE_SHARING = { maxBitrate: 150000, scaleResolutionDownBy: 2 };
 const CONNECT_FAILED = "Could not connect. Reload the page to try again.";
 // The other side answers within a second or two; if no answer arrives by then, it failed on their end
 const CONNECT_TIMEOUT = 20000;
@@ -23,6 +25,8 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	const [remoteSocketId, setRemoteSocketId] = useState(null);
 	const [myStream, setMyStream] = useState(null);
 	const [remoteStream, setRemoteStream] = useState(null);
+	const [remoteScreen, setRemoteScreen] = useState(null); // their screen lane, shown while they share
+	const [swapped, setSwapped] = useState(false); // their camera big and their screen small
 	const [remoteName, setRemoteName] = useState(null);
 	const [myName, setMyName] = useState(null); // typed on the join screen
 	const [joined, setJoined] = useState(false); // false while on the preview
@@ -42,6 +46,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	const chatOpen = useChatOpen();
 
 	const myStreamRef = useRef(null);
+	const screenTrackRef = useRef(null); // our shared screen, kept for the next call like the camera
 	const prefsRef = useRef({ videoId: "", audioId: "", cameraOff: false, muted: false }); // chosen on the preview
 	const tracksAddedRef = useRef(null); // the connection our tracks were added to
 	const callStateRef = useRef("idle"); // for socket handlers, which may run before a re-render
@@ -94,6 +99,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 			clearTimeout(connectTimerRef.current); // must not reset the connection of a later visit
 			myStreamRef.current?.getTracks().forEach(t => t.stop());
 			myStreamRef.current = null;
+			screenTrackRef.current?.stop();
 			peer.reset();
 			socket.emit("room:leave", { room: roomId });
 		};
@@ -114,16 +120,25 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	useEffect(() => {
 		peer.onIceCandidate = candidate => socket.emit("ice:candidate", { to: remoteSocketId, candidate });
 		peer.onTrack = setRemoteStream;
+		peer.onScreenTrack = track => setRemoteScreen(new MediaStream([track]));
 		// The call timer starts once media can flow, not when Call is clicked
 		peer.onConnectionState = state => state === "connected" && setCallStart(start => start ?? Date.now());
 		peer.onIceState = state => setReconnecting(state === "disconnected");
 	}, [socket, remoteSocketId]);
 
-	// Tell the other side whether our camera and mic are on (a shared screen counts as video)
-	const videoOn = isScreen || !cameraOff;
+	// Tell the other side whether our camera and mic are on and whether we share our screen
 	useEffect(() => {
-		if (callStart && remoteSocketId) socket.emit("media:state", { to: remoteSocketId, video: videoOn, audio: !muted });
-	}, [socket, remoteSocketId, callStart, videoOn, muted]);
+		if (callStart && remoteSocketId) socket.emit("media:state", { to: remoteSocketId, video: !cameraOff, audio: !muted, screen: isScreen });
+	}, [socket, remoteSocketId, callStart, cameraOff, muted, isScreen]);
+
+	// Shrink the camera while sharing and restore it afterwards (also on a call that starts mid-share)
+	useEffect(() => {
+		const camera = callStart && peer.peer.getSenders().find(s => s.track && s.track === myStreamRef.current?.getVideoTracks()[0]);
+		const params = camera?.getParameters();
+		if (!params?.encodings?.length) return;
+		Object.assign(params.encodings[0], isScreen ? CAMERA_WHILE_SHARING : { maxBitrate: undefined, scaleResolutionDownBy: 1 });
+		camera.setParameters(params).catch(e => console.error("Camera quality could not be changed", e));
+	}, [callStart, isScreen]);
 
 	const handleUserJoined = useCallback(({ id, name }) => {
 		setRemoteSocketId(id);
@@ -135,6 +150,8 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	const resetCall = useCallback(message => {
 		clearTimeout(connectTimerRef.current);
 		setRemoteStream(null);
+		setRemoteScreen(null);
+		setSwapped(false);
 		setRemoteMedia(MEDIA_ON);
 		setCallStart(null);
 		setReconnecting(false);
@@ -173,6 +190,9 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		if (tracksAddedRef.current !== connection) {
 			stream.getTracks().forEach(t => connection.addTrack(t, stream));
 			tracksAddedRef.current = connection;
+			// Only after addTrack, which would put the camera in a free lane. A share already running goes on it
+			const slot = peer.screenSlot(true);
+			if (slot && screenTrackRef.current) await slot.sender.replaceTrack(screenTrackRef.current);
 		}
 		return true;
 	}, []);
@@ -240,8 +260,9 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		peer.peer.addIceCandidate(candidate).catch(e => console.error("ICE candidate failed", e));
 	}, []);
 
-	const handleMediaState = useCallback(({ video, audio }) => {
-		setRemoteMedia({ video: video !== false, audio: audio !== false });
+	const handleMediaState = useCallback(({ video, audio, screen }) => {
+		setRemoteMedia({ video: video !== false, audio: audio !== false, screen: screen === true });
+		if (screen !== true) setSwapped(false); // their next share starts with the screen big again
 	}, []);
 
 	// Socket events, once joined (a reconnect while on the preview must not join the room)
@@ -265,28 +286,30 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		};
 	}, [joined, socket, handleUserJoined, handleUserLeft, handleIncomingCall, handleCallAccepted, handleIceCandidate, handleMediaState]);
 
-	// Switch between screen & camera: only the video track is swapped, the mic keeps running
-	const switchVideo = async toScreen => {
+	// The screen goes in its own lane next to the camera, so the camera and mic keep running.
+	// While waiting alone there is no lane yet: setupMedia puts the screen on the next call
+	const startShare = async () => {
 		try {
-			const source = toScreen
-				? await navigator.mediaDevices.getDisplayMedia({ video: true })
-				: await openDevices(prefsRef.current.videoId, null, { audio: false });
-			const [track] = source.getVideoTracks();
-			const current = myStreamRef.current;
-			if (!current) return track.stop();
-			if (!toScreen) track.enabled = !cameraOff; // back from sharing with the camera off: stay off
-
-			await peer.peer.getSenders().find(s => s.track?.kind === "video")?.replaceTrack(track);
-			current.getVideoTracks().forEach(t => t.stop());
-			const stream = new MediaStream([...current.getAudioTracks(), track]);
-			myStreamRef.current = stream;
-			setMyStream(stream);
-			setIsScreen(toScreen);
-			// Browser's own "Stop sharing" button
-			if (toScreen) track.onended = () => switchVideo(false);
+			const [track] = (await navigator.mediaDevices.getDisplayMedia({ video: true })).getVideoTracks();
+			if (!myStreamRef.current) return track.stop(); // left the room while choosing
+			track.contentHint = "detail"; // sharp text rather than smooth motion
+			screenTrackRef.current = track;
+			track.onended = stopShare; // the browser's own "Stop sharing" button
+			await peer.screenSlot()?.sender.replaceTrack(track);
+			setIsScreen(true);
 		} catch (e) {
-			console.error("Toggle share failed", e);
+			console.error("Screen share failed", e);
+			stopShare();
 		}
+	};
+
+	const stopShare = () => {
+		const track = screenTrackRef.current;
+		if (!track) return;
+		screenTrackRef.current = null;
+		peer.screenSlot()?.sender.replaceTrack(null).catch(e => console.error("Stop sharing failed", e));
+		track.stop();
+		setIsScreen(false);
 	};
 
 	// Toggle mic on/off
@@ -298,13 +321,17 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 
 	// Toggle camera on/off; the shared screen is not affected
 	const handleToggleCamera = () => {
-		if (!myStreamRef.current || isScreen) return;
+		if (!myStreamRef.current) return;
 		myStreamRef.current.getVideoTracks().forEach(track => track.enabled = cameraOff);
 		setCameraOff(!cameraOff);
 	};
 
 	// While ringing the offer is already applied, but the caller is not shown until we accept
 	const showRemote = remoteStream && callState === "active";
+	// Their shared screen is big and their camera small, until they click the small tile to swap
+	const remoteSharing = showRemote && remoteMedia.screen && remoteScreen;
+	const bigStream = remoteSharing && !swapped ? remoteScreen : remoteStream;
+	const smallStream = bigStream === remoteStream ? remoteScreen : remoteStream;
 
 return (
 	<div className={`min-h-screen flex flex-col transition-colors duration-500 ${darkMode ? "bg-zinc-900 text-white" : "bg-gray-100 text-gray-900"}`}>
@@ -370,15 +397,18 @@ return (
 					</div>
 
 					<div className="relative w-full max-w-4xl h-[60vh] bg-black rounded-2xl overflow-hidden shadow-lg border-4 border-gray-700">
+						{/* Their sound plays here, so swapping the videos never cuts it */}
+						{showRemote && <audio autoPlay ref={(a) => a && a.srcObject !== remoteStream && (a.srcObject = remoteStream)} />}
 						{showRemote && (
 							<video
 								autoPlay
 								playsInline
+								muted
 								className="w-full h-full object-contain"
-								ref={(v) => v && v.srcObject !== remoteStream && (v.srcObject = remoteStream)}
+								ref={(v) => v && v.srcObject !== bigStream && (v.srcObject = bigStream)}
 							/>
 						)}
-						{showRemote && !remoteMedia.video && (
+						{showRemote && !remoteMedia.video && bigStream === remoteStream && (
 							<div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-zinc-800 text-gray-300">
 								<FaVideoSlash size={40} />
 								<span>Camera off</span>
@@ -389,6 +419,28 @@ return (
 								{!remoteMedia.audio && <FaMicrophoneSlash className="shrink-0 text-red-400" title="Muted" />}
 								<span className="truncate">{remoteName}</span>
 							</span>
+						)}
+						{remoteSharing && (
+							<button
+								type="button"
+								onClick={() => setSwapped(!swapped)}
+								title="Swap screen and camera"
+								aria-label="Swap screen and camera"
+								className="absolute top-4 right-4 z-10 w-36 sm:w-48 aspect-video bg-black border-white border-2 rounded-lg overflow-hidden shadow-md transition-colors hover:border-indigo-400"
+							>
+								<video
+									autoPlay
+									playsInline
+									muted
+									className={`w-full h-full ${smallStream === remoteStream ? "object-cover" : "object-contain"}`}
+									ref={(v) => v && v.srcObject !== smallStream && (v.srcObject = smallStream)}
+								/>
+								{smallStream === remoteStream && !remoteMedia.video && (
+									<div className="absolute inset-0 flex items-center justify-center bg-zinc-800 text-gray-300">
+										<FaVideoSlash size={24} />
+									</div>
+								)}
+							</button>
 						)}
 						{callStart && <CallStatus connection={peer.peer} since={callStart} reconnecting={reconnecting} />}
 						{remoteSocketId && callState !== "active" && (
@@ -407,7 +459,7 @@ return (
 									className="w-full h-full object-cover"
 									ref={(v) => v && v.srcObject !== myStream && (v.srcObject = myStream)}
 								/>
-								{cameraOff && !isScreen && (
+								{cameraOff && (
 									<div className="absolute inset-0 flex items-center justify-center bg-zinc-800 text-gray-300">
 										<FaVideoSlash size={24} />
 									</div>
@@ -417,22 +469,26 @@ return (
 						)}
 					</div>
 
+					{isScreen && (
+						<div className="mt-4 px-4 py-2 rounded-full bg-indigo-100 text-indigo-800 font-semibold text-sm shadow flex items-center gap-2">
+							<FaDesktop /> You are sharing your screen
+						</div>
+					)}
+
 					<div className="mt-8 flex gap-4 flex-wrap justify-center">
 						{myStream && (
 							<>
 								<button
-									onClick={() => switchVideo(!isScreen)}
-									className="bg-gray-700 hover:bg-gray-600 text-white px-5 py-2 rounded-full flex items-center gap-2 shadow-sm transition-transform hover:-translate-y-1"
+									onClick={isScreen ? stopShare : startShare}
+									className={`${isScreen ? "bg-indigo-600 hover:bg-indigo-700" : "bg-gray-700 hover:bg-gray-600"} text-white px-5 py-2 rounded-full flex items-center gap-2 shadow-sm transition-transform hover:-translate-y-1`}
 								>
-									{isScreen ? <FaVideo /> : <FaDesktop />}
-									{isScreen ? "Use Camera" : "Share Screen"}
+									<FaDesktop />
+									{isScreen ? "Stop Sharing" : "Share Screen"}
 								</button>
 
 								<button
 									onClick={handleToggleCamera}
-									disabled={isScreen}
-									title={isScreen ? "Stop sharing your screen first" : undefined}
-									className="bg-gray-700 hover:bg-gray-600 text-white px-5 py-2 rounded-full flex items-center gap-2 shadow-sm transition-transform hover:-translate-y-1 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0"
+									className="bg-gray-700 hover:bg-gray-600 text-white px-5 py-2 rounded-full flex items-center gap-2 shadow-sm transition-transform hover:-translate-y-1"
 								>
 									{cameraOff ? <FaVideoSlash /> : <FaVideo />}
 									{cameraOff ? "Start Video" : "Stop Video"}
