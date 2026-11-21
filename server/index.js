@@ -102,9 +102,9 @@ io.on("connection", socket => {
   socket.on("ice:candidate", ({ to, candidate }) =>
     io.to(to).emit("ice:candidate", { from: socket.id, candidate })
   );
-  // Camera / mic on or off, so the other side can show a placeholder and a muted icon
-  socket.on("media:state", ({ to, video, audio }) =>
-    io.to(to).emit("media:state", { from: socket.id, video: video !== false, audio: audio !== false })
+  // Camera / mic on or off and screen shared or not, so the other side can show a placeholder, a muted icon and the screen
+  socket.on("media:state", ({ to, video, audio, screen }) =>
+    io.to(to).emit("media:state", { from: socket.id, video: video !== false, audio: audio !== false, screen: screen === true })
   );
 
   // Email the room link to a guest; see invite.js for the rules
