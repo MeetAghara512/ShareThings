@@ -2,6 +2,7 @@ try { process.loadEnvFile(__dirname + "/.env"); } catch {} // optional local ser
 
 const express = require("express");
 const http = require("http");
+const { createHash, randomBytes } = require("crypto");
 const { Server } = require("socket.io");
 const { OAuth2Client } = require("google-auth-library");
 const { sendInvite } = require("./invite");
@@ -23,6 +24,12 @@ const io = new Server(server, {
 });
 
 const MAX_ROOM_SIZE = 2;
+// A dropped connection keeps its seat this long, so the same browser tab can come back to its call
+const SEAT_GRACE = 30000;
+// Seats kept for dropped connections: room -> Map(clientId -> { id, name, seat, timer }). Memory only
+const heldSeats = new Map();
+// New on every start, so a client can tell "the server restarted and forgot all seats" from "my seat was given up"
+const SERVER_ID = randomBytes(8).toString("hex");
 
 // Public identifier of the Google OAuth client (not a secret). Must match GOOGLE_CLIENT_ID in client/src/useContext/AuthProvider.jsx
 const GOOGLE_CLIENT_ID = "123263407226-ltqv9qfv6s58ocr5nvgk2vggoa0addhf.apps.googleusercontent.com";
@@ -64,6 +71,61 @@ async function getIceServers() {
   }
 }
 
+// The random id a browser tab sends with room:join and room:peek, or null
+const validClientId = id => (typeof id === "string" && /^[\w-]{16,64}$/.test(id) ? id : null);
+// What the other person gets instead of the clientId, which would let them take this seat
+const seatOf = clientId => clientId && createHash("sha256").update(clientId).digest("hex").slice(0, 16);
+
+// Everyone with a place in the room except the asking tab: connected members and seats kept for dropped connections
+function othersInRoom(room, socket, clientId) {
+  // Every socket also sits in a room named after its own id; never report on those
+  const ids = io.sockets.sockets.has(room) ? [] : [...(io.sockets.adapter.rooms.get(room) ?? [])];
+  const members = ids.map(id => io.sockets.sockets.get(id)).filter(s => s && s !== socket && !(clientId && s.data.clientId === clientId));
+  const kept = [...(heldSeats.get(room) ?? [])].filter(([id]) => id !== clientId).map(([, seat]) => seat);
+  return [...members.map(s => s.data), ...kept];
+}
+
+// The same tab joins again: after a dropped connection (resume: the call goes on) or after a reload (a new call).
+// It gets back its kept seat, or the seat of an older connection the server has not yet noticed is dead.
+// Returns whether it had a seat to take back
+function takeSeat(room, socket, clientId, resume) {
+  socket.data.clientId = clientId;
+  socket.data.seat = seatOf(clientId);
+  if (!clientId) return false;
+  const kept = heldSeats.get(room)?.get(clientId);
+  const older = [...(io.sockets.adapter.rooms.get(room) ?? [])].map(id => io.sockets.sockets.get(id)).find(s => s && s !== socket && s.data.clientId === clientId);
+  if (!kept && !older) return false;
+  releaseSeat(room, clientId);
+  if (older) {
+    older.leave(room); // first, so its disconnect does not tell anyone it left
+    older.disconnect(true);
+  }
+  if (!resume) socket.to(room).emit("user:left", { id: (kept ?? older).id });
+  return true;
+}
+
+// A connection that dropped (not End Call, which disconnects on purpose) keeps its seat for SEAT_GRACE.
+// If the tab is not back by then, the other person is told it left
+function holdSeat(room, socket, reason) {
+  const { clientId, name, seat } = socket.data;
+  if (!clientId || reason === "client namespace disconnect") return false;
+  releaseSeat(room, clientId);
+  const timer = setTimeout(() => {
+    releaseSeat(room, clientId);
+    io.to(room).emit("user:left", { id: socket.id });
+  }, SEAT_GRACE);
+  if (!heldSeats.has(room)) heldSeats.set(room, new Map());
+  heldSeats.get(room).set(clientId, { id: socket.id, name, seat, timer });
+  return true;
+}
+
+function releaseSeat(room, clientId) {
+  const seats = heldSeats.get(room);
+  clearTimeout(seats?.get(clientId)?.timer);
+  seats?.delete(clientId);
+  if (seats?.size === 0) heldSeats.delete(room);
+}
+
 io.on("connection", socket => {
 
   // Every event carries an object payload; drop anything else before a handler can throw on it
@@ -77,27 +139,39 @@ io.on("connection", socket => {
     if (typeof ack === "function") ack(socket.data.user);
   });
 
-  socket.on("room:join", async ({ room, name }, ack) => {
+  // clientId: random per browser tab, so the tab gets its seat back after a dropped connection.
+  // resume: the tab still has its call running and wants to keep it
+  socket.on("room:join", async ({ room, name, clientId, resume }, ack) => {
     if (typeof room !== "string" || !room || typeof ack !== "function") return;
     // Display name shown to the other member: plain text, at most 40 characters
     socket.data.name = (typeof name === "string" && name.trim().slice(0, 40).trim()) || "Guest";
-    const members = io.sockets.adapter.rooms.get(room);
-    if (members?.size >= MAX_ROOM_SIZE && !members.has(socket.id)) return ack({ full: true });
+    const tab = validClientId(clientId);
+    if (othersInRoom(room, socket, tab).length >= MAX_ROOM_SIZE) return ack({ full: true });
+    const resumed = takeSeat(room, socket, tab, resume === true);
     socket.join(room);
 
     const iceServers = await getIceServers();
     if (!socket.rooms.has(room)) return; // left or disconnected while waiting
     const peerId = [...io.sockets.adapter.rooms.get(room)].find(id => id !== socket.id) ?? null;
     const peerName = io.sockets.sockets.get(peerId)?.data.name ?? null;
-    ack({ peerId, peerName, iceServers });
-    socket.to(room).emit("user:joined", { id: socket.id, name: socket.data.name });
+    const peerSeat = io.sockets.sockets.get(peerId)?.data.seat ?? null;
+    ack({ peerId, peerName, peerSeat, peerHeld: heldSeats.has(room), resumed, server: SERVER_ID, iceServers });
+    socket.to(room).emit("user:joined", { id: socket.id, name: socket.data.name, seat: socket.data.seat });
   });
 
-  socket.on("user:call", ({ to, offer }) =>
-    io.to(to).emit("incomming:call", { from: socket.id, offer })
+  // `restart`: an ICE restart of the running call (new network path), not a new call
+  socket.on("user:call", ({ to, offer, restart }) =>
+    io.to(to).emit("incomming:call", { from: socket.id, offer, restart: restart === true })
   );
-  socket.on("call:accepted", ({ to, ans }) =>
-    io.to(to).emit("call:accepted", { from: socket.id, ans })
+  socket.on("call:accepted", ({ to, ans, restart }) =>
+    io.to(to).emit("call:accepted", { from: socket.id, ans, restart: restart === true })
+  );
+  // ICE restarts are not getting through: ask the side that sent the first offer to restart, or start the connection over
+  socket.on("call:restart-request", ({ to }) =>
+    io.to(to).emit("call:restart-request", { from: socket.id })
+  );
+  socket.on("call:rebuild", ({ to }) =>
+    io.to(to).emit("call:rebuild", { from: socket.id })
   );
   socket.on("ice:candidate", ({ to, candidate }) =>
     io.to(to).emit("ice:candidate", { from: socket.id, candidate })
@@ -114,12 +188,11 @@ io.on("connection", socket => {
   });
 
   // Names of the people in a room, for the join screen. Does not join it.
-  socket.on("room:peek", ({ room }, ack) => {
+  // A seat kept for this tab itself (its connection dropped, then it reloaded) is not counted
+  socket.on("room:peek", ({ room, clientId }, ack) => {
     if (typeof room !== "string" || !room || typeof ack !== "function") return;
-    // Every socket also sits in a room named after its own id; never report on those
-    const ids = io.sockets.sockets.has(room) ? [] : [...(io.sockets.adapter.rooms.get(room) ?? [])];
-    const others = ids.filter(id => id !== socket.id);
-    ack({ names: others.map(id => io.sockets.sockets.get(id)?.data.name ?? "Guest"), full: others.length >= MAX_ROOM_SIZE });
+    const others = othersInRoom(room, socket, validClientId(clientId));
+    ack({ names: others.map(o => o.name ?? "Guest"), full: others.length >= MAX_ROOM_SIZE });
   });
 
   socket.on("room:leave", ({ room }) => {
@@ -128,9 +201,9 @@ io.on("connection", socket => {
     socket.leave(room);
   });
 
-  socket.on("disconnecting", () => {
+  socket.on("disconnecting", reason => {
     socket.rooms.forEach(room => {
-      if (room !== socket.id) socket.to(room).emit("user:left", { id: socket.id });
+      if (room !== socket.id && !holdSeat(room, socket, reason)) socket.to(room).emit("user:left", { id: socket.id });
     });
   });
 });
