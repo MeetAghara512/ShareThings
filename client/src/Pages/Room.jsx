@@ -22,8 +22,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	const [myStream, setMyStream] = useState(null);
 	const [remoteStream, setRemoteStream] = useState(null);
 	const [remoteName, setRemoteName] = useState(null);
-	// Display name chosen on the Lobby (same key as Lobby.jsx). Read once: a rename in another tab must not re-join mid-call
-	const [myName] = useState(() => localStorage.getItem("sharethings.name"));
+	const [myName, setMyName] = useState(null); // typed on the join screen
 	const [joined, setJoined] = useState(false); // false while on the preview
 
 	const [isScreen, setIsScreen] = useState(false);
@@ -82,11 +81,6 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		});
 	}, [socket, roomId, myName, navigate]);
 
-	// Room link opened without a name: ask for it on the Lobby first, which sends the user back here
-	useEffect(() => {
-		if (!myName) navigate(`/?room=${encodeURIComponent(roomId)}`, { replace: true });
-	}, [myName, roomId, navigate]);
-
 	// Join only after the preview, so nobody sees us before that.
 	// Leaving the page (e.g. browser Back) frees the camera, the connection and our place in the room
 	useEffect(() => {
@@ -104,6 +98,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	// The preview hands over its stream, so the call needs no second camera prompt
 	const handleJoin = (stream, prefs) => {
 		prefsRef.current = prefs;
+		setMyName(prefs.name);
 		myStreamRef.current = stream;
 		setMyStream(stream);
 		setCameraOff(prefs.cameraOff);
@@ -350,8 +345,6 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		setCameraOff(!cameraOff);
 	};
 
-if (!myName) return null; // being redirected to the Lobby
-
 	// While ringing the offer is already applied, but the caller is not shown until we accept
 	const showRemote = remoteStream && callState === "active";
 
@@ -371,7 +364,7 @@ return (
 
 		<main className="flex-grow flex flex-col items-center justify-center p-6">
 			{!joined ? (
-				<Preview darkMode={darkMode} onJoin={handleJoin} />
+				<Preview darkMode={darkMode} roomId={roomId} onJoin={handleJoin} />
 			) : (
 				<>
 					<div className="mb-6 text-center">

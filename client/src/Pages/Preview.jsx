@@ -1,10 +1,20 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { FaVideoSlash, FaRedo } from "react-icons/fa";
+import { FaVideo, FaVideoSlash, FaMicrophone, FaMicrophoneSlash, FaRedo } from "react-icons/fa";
 import { openDevices } from "../Services/devices";
+import { useSocket } from "../useContext/SocketProvider";
+import { useAuth } from "../useContext/AuthProvider";
 
-// Devices picked on this browser
+// Devices picked and name used on this browser
 const CAMERA_KEY = "sharethings.camera";
 const MIC_KEY = "sharethings.mic";
+const NAME_KEY = "sharethings.name";
+// How often the join screen re-checks who is in the room
+const PEEK_INTERVAL = 4000;
+
+const whoIsHere = names =>
+	names.length === 0 ? "No one else is here yet" :
+	names.length === 1 ? `${names[0]} is in this call` :
+	`${names.slice(0, -1).join(", ")} and ${names.at(-1)} are in this call`;
 
 const describeError = e => {
 	switch (e?.name) {
@@ -23,7 +33,9 @@ const describeError = e => {
 };
 
 // Check camera and mic before joining. Nothing is sent to the room until Join.
-const Preview = ({ darkMode, onJoin }) => {
+const Preview = ({ darkMode, roomId, onJoin }) => {
+	const socket = useSocket();
+	const { user } = useAuth();
 	const [stream, setStream] = useState(null);
 	const [error, setError] = useState(null);
 	const [loading, setLoading] = useState(true);
@@ -33,6 +45,8 @@ const Preview = ({ darkMode, onJoin }) => {
 	const [audioId, setAudioId] = useState(() => localStorage.getItem(MIC_KEY) || "");
 	const [cameraOff, setCameraOff] = useState(false);
 	const [muted, setMuted] = useState(false);
+	const [name, setName] = useState(() => localStorage.getItem(NAME_KEY) || user?.name || "");
+	const [peek, setPeek] = useState(null); // { names, full } once known
 
 	const streamRef = useRef(null);
 	const requestRef = useRef(0); // only the latest camera request counts
@@ -131,6 +145,20 @@ const Preview = ({ darkMode, onJoin }) => {
 		};
 	}, [stream]);
 
+	// Signing in suggests the Google name, but never replaces what is already in the field
+	const googleName = user?.name;
+	useEffect(() => {
+		if (googleName) setName(current => current || googleName);
+	}, [googleName]);
+
+	// Who is already in the room, kept fresh while this screen is open
+	useEffect(() => {
+		const check = () => socket.emit("room:peek", { room: roomId }, setPeek);
+		check();
+		const id = setInterval(check, PEEK_INTERVAL);
+		return () => clearInterval(id);
+	}, [socket, roomId]);
+
 	const pickCamera = id => {
 		localStorage.setItem(CAMERA_KEY, id);
 		setVideoId(id);
@@ -142,13 +170,22 @@ const Preview = ({ darkMode, onJoin }) => {
 		start(videoId, id);
 	};
 
-	const handleJoin = () => {
-		if (!streamRef.current) return;
+	const displayName = name.trim();
+	const canJoin = stream && displayName && !peek?.full;
+
+	const handleJoin = e => {
+		e.preventDefault();
+		if (!canJoin) return;
 		localStorage.setItem(CAMERA_KEY, videoId);
 		localStorage.setItem(MIC_KEY, audioId);
+		localStorage.setItem(NAME_KEY, displayName);
 		handedOverRef.current = true;
-		onJoin(streamRef.current, { videoId, audioId, cameraOff, muted });
+		onJoin(streamRef.current, { videoId, audioId, cameraOff, muted, name: displayName });
 	};
+
+	// Round on/off buttons on the preview, red when off (like Google Meet)
+	const toggleClass = off => `w-12 h-12 rounded-full flex items-center justify-center text-white shadow-md transition-colors ` +
+		(off ? "bg-red-600 hover:bg-red-700" : "bg-gray-800/70 hover:bg-gray-700/80 border border-white/40");
 
 	const selectClass = `w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 ` +
 		(darkMode ? "bg-gray-700 border-gray-600" : "bg-white border-gray-300");
@@ -172,6 +209,30 @@ const Preview = ({ darkMode, onJoin }) => {
 						<span>Camera is off</span>
 					</div>
 				)}
+				{stream && (
+					<div className="absolute bottom-4 inset-x-0 flex justify-center gap-4">
+						<button
+							type="button"
+							onClick={() => setMuted(!muted)}
+							aria-pressed={muted}
+							aria-label={muted ? "Turn on microphone" : "Turn off microphone"}
+							title={muted ? "Turn on microphone" : "Turn off microphone"}
+							className={toggleClass(muted)}
+						>
+							{muted ? <FaMicrophoneSlash size={18} /> : <FaMicrophone size={18} />}
+						</button>
+						<button
+							type="button"
+							onClick={() => setCameraOff(!cameraOff)}
+							aria-pressed={cameraOff}
+							aria-label={cameraOff ? "Turn on camera" : "Turn off camera"}
+							title={cameraOff ? "Turn on camera" : "Turn off camera"}
+							className={toggleClass(cameraOff)}
+						>
+							{cameraOff ? <FaVideoSlash size={18} /> : <FaVideo size={18} />}
+						</button>
+					</div>
+				)}
 				{!stream && (
 					<div className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-6 text-center text-white">
 						{error ? <p className="text-red-300">{error}</p> : <p className="animate-pulse">Starting camera and microphone...</p>}
@@ -187,11 +248,31 @@ const Preview = ({ darkMode, onJoin }) => {
 				)}
 			</div>
 
-			<div className={`w-full md:w-2/5 p-6 rounded-2xl shadow-lg space-y-4 ${darkMode ? "bg-gray-800 text-gray-100" : "bg-white text-gray-900"}`}>
-				<div>
+			<form onSubmit={handleJoin} className={`w-full md:w-2/5 p-6 rounded-2xl shadow-lg space-y-4 ${darkMode ? "bg-gray-800 text-gray-100" : "bg-white text-gray-900"}`}>
+				<div className="space-y-1">
 					<h3 className="text-xl font-semibold">Ready to join?</h3>
+					{peek && (
+						<p className={`text-sm font-medium ${peek.full ? "text-red-500" : "text-indigo-400"}`}>
+							{peek.full ? `${whoIsHere(peek.names)}. This room is full.` : whoIsHere(peek.names)}
+						</p>
+					)}
 					<p className="text-sm opacity-60">No one in the room can see or hear you until you join.</p>
 				</div>
+
+				<label className="block space-y-1 text-sm">
+					<span className="block font-medium">Your name</span>
+					<input
+						type="text"
+						value={name}
+						onChange={e => setName(e.target.value)}
+						placeholder="Shown to the other person"
+						required
+						maxLength={40}
+						autoComplete="name"
+						className={`w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 ` +
+							(darkMode ? "bg-gray-700 border-gray-600 placeholder-gray-400" : "bg-white border-gray-300 placeholder-gray-500")}
+					/>
+				</label>
 
 				<div className="space-y-1 text-sm">
 					<span className="block font-medium">Microphone level{muted && " (muted)"}</span>
@@ -217,23 +298,14 @@ const Preview = ({ darkMode, onJoin }) => {
 					</label>
 				)}
 
-				<label className="flex items-center gap-2 text-sm cursor-pointer">
-					<input type="checkbox" checked={cameraOff} onChange={e => setCameraOff(e.target.checked)} className="w-4 h-4 accent-indigo-600" />
-					Join with camera off
-				</label>
-				<label className="flex items-center gap-2 text-sm cursor-pointer">
-					<input type="checkbox" checked={muted} onChange={e => setMuted(e.target.checked)} className="w-4 h-4 accent-indigo-600" />
-					Join muted
-				</label>
-
 				<button
-					onClick={handleJoin}
-					disabled={!stream}
+					type="submit"
+					disabled={!canJoin}
 					className="w-full py-3 rounded-lg bg-indigo-600 text-white font-semibold transition-transform hover:bg-indigo-700 hover:-translate-y-1 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:bg-indigo-600"
 				>
 					Join now
 				</button>
-			</div>
+			</form>
 		</div>
 	);
 };
