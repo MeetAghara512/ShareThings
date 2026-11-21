@@ -1,5 +1,5 @@
 import React, { useEffect, useCallback, useRef, useState } from "react";
-import { FaMoon, FaSun, FaPhone, FaPhoneSlash, FaDesktop, FaVideo, FaVideoSlash, FaMicrophone, FaMicrophoneSlash, FaLink, FaCheck } from "react-icons/fa";
+import { FaMoon, FaSun, FaPhone, FaDesktop, FaVideo, FaVideoSlash, FaMicrophone, FaMicrophoneSlash, FaLink, FaCheck } from "react-icons/fa";
 import peer from "../Services/peer";
 import { openDevices } from "../Services/devices";
 import { useSocket } from "../useContext/SocketProvider";
@@ -10,8 +10,9 @@ import Preview from "./Preview";
 
 // What the other side last told us about their camera and mic
 const MEDIA_ON = { video: true, audio: true };
-// An unanswered call gives up after this long
-const RING_TIMEOUT = 30000;
+const CONNECT_FAILED = "Could not connect. Reload the page to try again.";
+// The other side answers within a second or two; if no answer arrives by then, it failed on their end
+const CONNECT_TIMEOUT = 20000;
 
 const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	const { roomId } = useParams();
@@ -33,17 +34,18 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	const [reconnecting, setReconnecting] = useState(false);
 	const [copied, setCopied] = useState(false);
 
-	// idle | calling (we ring them) | ringing (they ring us) | active
+	// idle | calling (we sent the offer) | active. Like Google Meet there is no ringing:
+	// once both people are in the room the call connects on its own
 	const [callState, setCallStateValue] = useState("idle");
-	const [incomingFrom, setIncomingFrom] = useState(null); // caller's id, once their offer is applied
-	const [notice, setNotice] = useState(null); // "Call declined", "No answer", ...
+	const [notice, setNotice] = useState(null); // shown if connecting failed
 
 	const myStreamRef = useRef(null);
 	const prefsRef = useRef({ videoId: "", audioId: "", cameraOff: false, muted: false }); // chosen on the preview
 	const tracksAddedRef = useRef(null); // the connection our tracks were added to
 	const callStateRef = useRef("idle"); // for socket handlers, which may run before a re-render
 	const iceServersRef = useRef([]); // from the last join, for a fresh connection after a declined call
-	const ringTimerRef = useRef(null);
+	const autoCalledRef = useRef(null); // the person we already started a call with, so a failure is not retried in a loop
+	const connectTimerRef = useRef(null);
 
 	const setCallState = useCallback(state => {
 		callStateRef.current = state;
@@ -87,7 +89,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		if (!joined) return;
 		joinRoom();
 		return () => {
-			clearTimeout(ringTimerRef.current);
+			clearTimeout(connectTimerRef.current); // must not reset the connection of a later visit
 			myStreamRef.current?.getTracks().forEach(t => t.stop());
 			myStreamRef.current = null;
 			peer.reset();
@@ -126,20 +128,14 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		setRemoteName(name);
 	}, []);
 
-	// Call is over or never started: camera off, fresh connection, Call button back
+	// Call is over or never started: fresh connection. Like Google Meet, your camera, mic and
+	// shared screen stay as they are, ready for whoever joins next
 	const resetCall = useCallback(message => {
-		clearTimeout(ringTimerRef.current);
-		myStreamRef.current?.getTracks().forEach(t => t.stop());
-		myStreamRef.current = null;
-		setMyStream(null);
+		clearTimeout(connectTimerRef.current);
 		setRemoteStream(null);
-		setIsScreen(false);
-		setMuted(prefsRef.current.muted); // the next call starts as chosen on the preview
-		setCameraOff(prefsRef.current.cameraOff);
 		setRemoteMedia(MEDIA_ON);
 		setCallStart(null);
 		setReconnecting(false);
-		setIncomingFrom(null);
 		setCallState("idle");
 		setNotice(message ?? null);
 		peer.reset(iceServersRef.current); // right away, so a camera prompt that is still open knows the call is over
@@ -148,17 +144,11 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	// Other user left or our signaling dropped: back to a clean waiting state
 	const handleUserLeft = useCallback(() => {
 		resetCall();
+		autoCalledRef.current = null; // the same person may come back with the same socket id (in-app Back, then join again)
 		setRemoteSocketId(null);
 		setRemoteName(null);
 		joinRoom();
 	}, [resetCall, joinRoom]);
-
-	// Notices like "Call declined" go away after a few seconds
-	useEffect(() => {
-		if (!notice) return;
-		const id = setTimeout(() => setNotice(null), 5000);
-		return () => clearTimeout(id);
-	}, [notice]);
 
 	// Camera + mic, added to the connection once per call: the preview's stream, or the chosen devices
 	// again after an earlier call ended (which turned the camera off)
@@ -185,78 +175,57 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		return true;
 	}, []);
 
-	// Outgoing call: rings until the other user accepts or declines, we cancel, or nobody answers
+	// Start the call: send our offer, the other side answers on its own
 	const handleCallUser = useCallback(async () => {
-		if (callStateRef.current !== "idle") return; // ignore repeat clicks while the camera prompt is open
+		if (callStateRef.current !== "idle") return;
 		setCallState("calling");
 		setNotice(null);
 		const connection = peer.peer;
 		try {
 			if (!(await setupMedia())) return;
 			const offer = await peer.getOffer();
-			if (connection !== peer.peer) return; // cancelled meanwhile
+			if (connection !== peer.peer) return; // the other person left meanwhile
 			socket.emit("user:call", { to: remoteSocketId, offer });
-			ringTimerRef.current = setTimeout(() => {
-				socket.emit("call:cancelled", { to: remoteSocketId });
-				resetCall("No answer");
-			}, RING_TIMEOUT);
+			connectTimerRef.current = setTimeout(() => {
+				if (callStateRef.current === "calling") resetCall(CONNECT_FAILED);
+			}, CONNECT_TIMEOUT);
 		} catch (e) {
 			console.error("Call failed", e);
-			if (connection === peer.peer) resetCall("Could not start the call");
+			if (connection === peer.peer) resetCall(CONNECT_FAILED);
 		}
 	}, [remoteSocketId, socket, setupMedia, resetCall, setCallState]);
 
-	const handleCancelCall = () => {
-		socket.emit("call:cancelled", { to: remoteSocketId });
-		resetCall();
-	};
+	// Both people are in the room: connect. Exactly one side may send the offer, so the one with the
+	// larger id does it, whichever joined first. Each person is called at most once.
+	useEffect(() => {
+		if (!joined || !remoteSocketId || callState !== "idle" || !socket.id || socket.id < remoteSocketId) return;
+		if (autoCalledRef.current === remoteSocketId) return;
+		autoCalledRef.current = remoteSocketId;
+		handleCallUser();
+	}, [joined, remoteSocketId, callState, socket, handleCallUser]);
 
-	// Incoming call: apply the offer at once, so the caller's ICE candidates (sent before we answer)
-	// are never lost, then ring. Their media stays hidden until we accept.
+	// Incoming call: answered at once. The offer is applied first, so the caller's ICE candidates are
+	// never lost and our tracks reuse the offer's transceivers (no renegotiation)
 	const handleIncomingCall = useCallback(async ({ from, offer }) => {
-		if (callStateRef.current !== "idle") return; // busy
-		setCallState("ringing");
+		if (callStateRef.current !== "idle") return; // already connecting
+		setCallState("active");
 		setNotice(null);
 		const connection = peer.peer;
 		try {
 			await peer.setRemoteDescription(offer);
-		} catch (e) {
-			console.error("Incoming call failed", e);
-			if (connection !== peer.peer) return;
-			socket.emit("call:declined", { to: from });
-			return resetCall();
-		}
-		if (connection === peer.peer) setIncomingFrom(from); // not cancelled meanwhile
-	}, [socket, resetCall, setCallState]);
-
-	// Accept: our tracks reuse the offer's transceivers (no renegotiation), then answer
-	const handleAccept = async () => {
-		const from = incomingFrom;
-		if (!from) return;
-		setIncomingFrom(null);
-		setCallState("active");
-		const connection = peer.peer;
-		try {
-			if (!(await setupMedia())) return; // caller hung up while our camera prompt was open
+			if (!(await setupMedia())) return;
 			const ans = await peer.getAnswer();
+			if (connection !== peer.peer) return; // the other person left meanwhile
 			socket.emit("call:accepted", { to: from, ans });
 		} catch (e) {
-			console.error("Answer failed", e);
-			if (connection !== peer.peer) return;
-			socket.emit("call:declined", { to: from });
-			resetCall("Could not start the call");
+			console.error("Answering failed", e);
+			if (connection === peer.peer) resetCall(CONNECT_FAILED);
 		}
-	};
-
-	const handleDecline = () => {
-		if (!incomingFrom) return;
-		socket.emit("call:declined", { to: incomingFrom });
-		resetCall();
-	};
+	}, [socket, setupMedia, resetCall, setCallState]);
 
 	const handleCallAccepted = useCallback(async ({ ans }) => {
-		if (callStateRef.current !== "calling") return; // we gave up already
-		clearTimeout(ringTimerRef.current);
+		if (callStateRef.current !== "calling") return;
+		clearTimeout(connectTimerRef.current);
 		setCallState("active");
 		try {
 			await peer.setRemoteDescription(ans);
@@ -264,15 +233,6 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 			console.error("Answer could not be applied", e);
 		}
 	}, [setCallState]);
-
-	const handleCallDeclined = useCallback(() => {
-		if (callStateRef.current === "calling") resetCall("Call declined");
-	}, [resetCall]);
-
-	// The caller cancelled or gave up
-	const handleCallCancelled = useCallback(() => {
-		if (callStateRef.current === "ringing" || callStateRef.current === "active") resetCall("Missed call");
-	}, [resetCall]);
 
 	const handleIceCandidate = useCallback(({ candidate }) => {
 		peer.peer.addIceCandidate(candidate).catch(e => console.error("ICE candidate failed", e));
@@ -289,8 +249,6 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		socket.on("user:left", handleUserLeft);
 		socket.on("incomming:call", handleIncomingCall);
 		socket.on("call:accepted", handleCallAccepted);
-		socket.on("call:declined", handleCallDeclined);
-		socket.on("call:cancelled", handleCallCancelled);
 		socket.on("ice:candidate", handleIceCandidate);
 		socket.on("media:state", handleMediaState);
 		socket.io.on("reconnect", handleUserLeft);
@@ -299,13 +257,11 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 			socket.off("user:left", handleUserLeft);
 			socket.off("incomming:call", handleIncomingCall);
 			socket.off("call:accepted", handleCallAccepted);
-			socket.off("call:declined", handleCallDeclined);
-			socket.off("call:cancelled", handleCallCancelled);
 			socket.off("ice:candidate", handleIceCandidate);
 			socket.off("media:state", handleMediaState);
 			socket.io.off("reconnect", handleUserLeft);
 		};
-	}, [joined, socket, handleUserJoined, handleUserLeft, handleIncomingCall, handleCallAccepted, handleCallDeclined, handleCallCancelled, handleIceCandidate, handleMediaState]);
+	}, [joined, socket, handleUserJoined, handleUserLeft, handleIncomingCall, handleCallAccepted, handleIceCandidate, handleMediaState]);
 
 	// Switch between screen & camera: only the video track is swapped, the mic keeps running
 	const switchVideo = async toScreen => {
@@ -433,39 +389,11 @@ return (
 							</span>
 						)}
 						{callStart && <CallStatus connection={peer.peer} since={callStart} reconnecting={reconnecting} />}
-						{(incomingFrom || callState === "calling" || (callState === "idle" && notice)) && (
-							<div className="absolute inset-0 flex flex-col items-center justify-center gap-6 p-6 text-center text-white">
-								{incomingFrom ? (
-									<>
-										<span className="max-w-full truncate text-2xl font-semibold">{remoteName || "Someone"} is calling</span>
-										<div className="flex gap-4">
-											<button
-												onClick={handleAccept}
-												className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-full flex items-center gap-2 shadow-md transition-transform hover:-translate-y-1"
-											>
-												<FaPhone /> Accept
-											</button>
-											<button
-												onClick={handleDecline}
-												className="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-full flex items-center gap-2 shadow-md transition-transform hover:-translate-y-1"
-											>
-												<FaPhoneSlash /> Decline
-											</button>
-										</div>
-									</>
-								) : callState === "calling" ? (
-									<>
-										<span className="max-w-full truncate text-2xl font-semibold animate-pulse">Calling {remoteName}...</span>
-										<button
-											onClick={handleCancelCall}
-											className="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-full flex items-center gap-2 shadow-md transition-transform hover:-translate-y-1"
-										>
-											<FaPhoneSlash /> Cancel
-										</button>
-									</>
-								) : (
-									<span className="text-xl text-gray-300">{notice}</span>
-								)}
+						{remoteSocketId && callState !== "active" && (
+							<div className="absolute inset-0 flex items-center justify-center p-6 text-center text-white">
+								<span className={`max-w-full text-xl ${notice ? "text-gray-300" : "font-semibold animate-pulse"}`}>
+									{notice || `Connecting to ${remoteName || "the other person"}...`}
+								</span>
 							</div>
 						)}
 						{myStream && (
@@ -488,26 +416,15 @@ return (
 					</div>
 
 					<div className="mt-8 flex gap-4 flex-wrap justify-center">
-						{callState === "idle" && remoteSocketId && (
-							<button
-								onClick={handleCallUser}
-								className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-full flex items-center gap-2 shadow-md transition-transform hover:-translate-y-1"
-							>
-								<FaPhone /> Call
-							</button>
-						)}
-
 						{myStream && (
 							<>
-								{callState === "active" && (
-									<button
-										onClick={() => switchVideo(!isScreen)}
-										className="bg-gray-700 hover:bg-gray-600 text-white px-5 py-2 rounded-full flex items-center gap-2 shadow-sm transition-transform hover:-translate-y-1"
-									>
-										{isScreen ? <FaVideo /> : <FaDesktop />}
-										{isScreen ? "Use Camera" : "Share Screen"}
-									</button>
-								)}
+								<button
+									onClick={() => switchVideo(!isScreen)}
+									className="bg-gray-700 hover:bg-gray-600 text-white px-5 py-2 rounded-full flex items-center gap-2 shadow-sm transition-transform hover:-translate-y-1"
+								>
+									{isScreen ? <FaVideo /> : <FaDesktop />}
+									{isScreen ? "Use Camera" : "Share Screen"}
+								</button>
 
 								<button
 									onClick={handleToggleCamera}
@@ -527,14 +444,12 @@ return (
 									{muted ? "Unmute" : "Mute"}
 								</button>
 
-								{callState === "active" && (
-									<button
-										onClick={handleCutCall}
-										className="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-full flex items-center gap-2 shadow-md transition-transform hover:-translate-y-1"
-									>
-										<FaPhone /> End Call
-									</button>
-								)}
+								<button
+									onClick={handleCutCall}
+									className="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-full flex items-center gap-2 shadow-md transition-transform hover:-translate-y-1"
+								>
+									<FaPhone /> End Call
+								</button>
 							</>
 						)}
 					</div>
