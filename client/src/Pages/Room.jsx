@@ -452,11 +452,12 @@ return (
 						)}
 						{myStream && (
 							<div className="absolute bottom-4 right-4 w-36 h-28 border-white border-2 rounded-lg overflow-hidden shadow-md">
+								{/* Your own camera, shown like a mirror (as in Google Meet); the other person gets the true picture */}
 								<video
 									autoPlay
 									muted
 									playsInline
-									className="w-full h-full object-cover"
+									className="w-full h-full object-cover -scale-x-100"
 									ref={(v) => v && v.srcObject !== myStream && (v.srcObject = myStream)}
 								/>
 								{cameraOff && (

@@ -194,12 +194,13 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 	return (
 		<div className="w-full max-w-4xl flex flex-col md:flex-row gap-6 items-center" onPointerDown={() => audioCtxRef.current?.resume()}>
 			<div className="relative w-full md:w-3/5 aspect-video bg-black rounded-2xl overflow-hidden shadow-lg border-4 border-gray-700">
+				{/* Shown like a mirror; the other person gets the true picture */}
 				{stream && (
 					<video
 						autoPlay
 						muted
 						playsInline
-						className="w-full h-full object-cover"
+						className="w-full h-full object-cover -scale-x-100"
 						ref={(v) => v && v.srcObject !== stream && (v.srcObject = stream)}
 					/>
 				)}
