@@ -11,6 +11,8 @@ import Preview from "./Preview";
 // What the other side last told us about their camera and mic
 const MEDIA_ON = { video: true, audio: true };
 const CONNECT_FAILED = "Could not connect. Reload the page to try again.";
+// The other side answers within a second or two; if no answer arrives by then, it failed on their end
+const CONNECT_TIMEOUT = 20000;
 
 const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	const { roomId } = useParams();
@@ -43,6 +45,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	const callStateRef = useRef("idle"); // for socket handlers, which may run before a re-render
 	const iceServersRef = useRef([]); // from the last join, for a fresh connection after a declined call
 	const autoCalledRef = useRef(null); // the person we already started a call with, so a failure is not retried in a loop
+	const connectTimerRef = useRef(null);
 
 	const setCallState = useCallback(state => {
 		callStateRef.current = state;
@@ -86,6 +89,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		if (!joined) return;
 		joinRoom();
 		return () => {
+			clearTimeout(connectTimerRef.current); // must not reset the connection of a later visit
 			myStreamRef.current?.getTracks().forEach(t => t.stop());
 			myStreamRef.current = null;
 			peer.reset();
@@ -127,6 +131,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	// Call is over or never started: fresh connection. Like Google Meet, your camera, mic and
 	// shared screen stay as they are, ready for whoever joins next
 	const resetCall = useCallback(message => {
+		clearTimeout(connectTimerRef.current);
 		setRemoteStream(null);
 		setRemoteMedia(MEDIA_ON);
 		setCallStart(null);
@@ -139,6 +144,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	// Other user left or our signaling dropped: back to a clean waiting state
 	const handleUserLeft = useCallback(() => {
 		resetCall();
+		autoCalledRef.current = null; // the same person may come back with the same socket id (in-app Back, then join again)
 		setRemoteSocketId(null);
 		setRemoteName(null);
 		joinRoom();
@@ -180,6 +186,9 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 			const offer = await peer.getOffer();
 			if (connection !== peer.peer) return; // the other person left meanwhile
 			socket.emit("user:call", { to: remoteSocketId, offer });
+			connectTimerRef.current = setTimeout(() => {
+				if (callStateRef.current === "calling") resetCall(CONNECT_FAILED);
+			}, CONNECT_TIMEOUT);
 		} catch (e) {
 			console.error("Call failed", e);
 			if (connection === peer.peer) resetCall(CONNECT_FAILED);
@@ -216,6 +225,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 
 	const handleCallAccepted = useCallback(async ({ ans }) => {
 		if (callStateRef.current !== "calling") return;
+		clearTimeout(connectTimerRef.current);
 		setCallState("active");
 		try {
 			await peer.setRemoteDescription(ans);
