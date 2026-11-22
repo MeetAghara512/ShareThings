@@ -92,7 +92,8 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 			iceServersRef.current = iceServers;
 			serverRef.current = server;
 			remoteSeatRef.current = peerSeat;
-			peer.reset(iceServers);
+			// A call can start before this reply arrives (someone left and came straight back): keep its connection
+			if (callStateRef.current === "idle") peer.reset(iceServers);
 			setRemoteSocketId(peerId);
 			setRemoteName(peerName);
 		});
