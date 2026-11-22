@@ -2,6 +2,7 @@ import React, { useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { FaMoon, FaSun } from "react-icons/fa";
 import { useAuth, GoogleSignInButton } from "../useContext/AuthProvider";
+import ServerStatus from "./ServerStatus";
 
 // A new room code like Google Meet's: 10 random letters as abc-defg-hij, 26^10 ≈ 141 trillion codes,
 // so live rooms cannot be found by guessing. getRandomValues also works on plain-HTTP test pages.
@@ -103,6 +104,7 @@ const Lobby = ({ darkMode, toggleDarkMode }) => {
 					>
 						{room.trim() ? "Join Room" : "Create Room"}
 					</button>
+					<ServerStatus />
 				</form>
 			</main>
 

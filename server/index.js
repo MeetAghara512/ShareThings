@@ -9,6 +9,9 @@ const { sendInvite } = require("./invite");
 const app = express();
 const server = http.createServer(app);
 
+// Answers at once; the page calls it on load so a sleeping free server starts waking up straight away
+app.get("/health", (req, res) => res.type("text").send("ok"));
+
 // Sites allowed to connect; invite emails only ever link to one of these
 const ALLOWED_ORIGINS = [
   "https://sharethings-web.onrender.com",
