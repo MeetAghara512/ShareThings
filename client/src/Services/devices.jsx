@@ -1,16 +1,19 @@
 // Camera and mic. Browsers ignore a deviceId that is not "exact", so a saved device is asked for
-// exactly, and the default is used when it is gone.
-const pick = (listed, id) => (id && (!listed.some(Boolean) || listed.includes(id)) ? { deviceId: { exact: id } } : true);
+// exactly, and the default is used when it is gone. Without a size the camera opens at 640x480, so it
+// is asked for HD; only as "ideal", so a weaker camera still opens at the best it can do
+const HD = { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } };
+const any = kind => (kind === "video" ? HD : true);
+const pick = (listed, id, kind) => (id && (!listed.some(Boolean) || listed.includes(id)) ? { ...(kind === "video" && HD), deviceId: { exact: id } } : any(kind));
 const listed = async kind => (await navigator.mediaDevices.enumerateDevices().catch(() => [])).filter(d => !kind || d.kind === kind + "input").map(d => d.deviceId);
 
 // One device on its own: "audio" or "video". Resolves to its track
 export const openDevice = async (kind, id) => {
-	const want = pick(await listed(kind), id);
+	const want = pick(await listed(kind), id, kind);
 	try {
 		return (await navigator.mediaDevices.getUserMedia({ [kind]: want })).getTracks()[0];
 	} catch (e) {
-		if (want === true || (e.name !== "OverconstrainedError" && e.name !== "NotFoundError")) throw e;
-		return (await navigator.mediaDevices.getUserMedia({ [kind]: true })).getTracks()[0];
+		if (want === any(kind) || (e.name !== "OverconstrainedError" && e.name !== "NotFoundError")) throw e;
+		return (await navigator.mediaDevices.getUserMedia({ [kind]: any(kind) })).getTracks()[0];
 	}
 };
 
@@ -38,7 +41,7 @@ export const openEach = async (videoId, audioId) => {
 	const ids = { video: videoId, audio: audioId };
 	try {
 		const all = await listed();
-		return { stream: await navigator.mediaDevices.getUserMedia({ video: pick(all, videoId), audio: pick(all, audioId) }), trouble: {} };
+		return { stream: await navigator.mediaDevices.getUserMedia({ video: pick(all, videoId, "video"), audio: pick(all, audioId, "audio") }), trouble: {} };
 	} catch (e) {
 		const states = { video: await permission("video"), audio: await permission("audio") };
 		const refused = troubleOf(e) === "blocked" && !Object.values(states).includes("denied");
