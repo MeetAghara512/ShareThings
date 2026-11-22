@@ -88,9 +88,9 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 
 	// Join the room; the server replies with who is already there and the ICE servers to use
 	const joinRoom = useCallback(() => {
-		socket.emit("room:join", { room: roomId, name: myName, clientId: clientId() }, ({ full, peerId, peerName, peerSeat, server, iceServers }) => {
+		socket.emit("room:join", { room: roomId, name: myName, clientId: clientId() }, ({ full, error, peerId, peerName, peerSeat, server, iceServers }) => {
 			if (full) {
-				alert("This room is full.");
+				alert(error || "This room is full."); // error: too many attempts from this internet address
 				return navigate("/");
 			}
 			iceServersRef.current = iceServers;
@@ -348,9 +348,9 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		// What we sent while offline waits in Socket.IO's buffer. The server only relays between people in the
 		// same room, so the rejoin has to reach it first
 		const queued = socket.sendBuffer.splice(0);
-		socket.emit("room:join", { room: roomId, name: myName, clientId: clientId(), resume: true }, ({ full, peerId, peerName, peerSeat, peerHeld, resumed, server, iceServers }) => {
+		socket.emit("room:join", { room: roomId, name: myName, clientId: clientId(), resume: true }, ({ full, error, peerId, peerName, peerSeat, peerHeld, resumed, server, iceServers }) => {
 			if (full) {
-				alert("This room is full.");
+				alert(error || "This room is full.");
 				return navigate("/");
 			}
 			const restarted = server !== serverRef.current;
