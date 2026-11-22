@@ -149,7 +149,10 @@ async function sendInvite(socket, { to, room, when }, allowedOrigins, googleClie
     // Count the invite before sending so parallel requests cannot slip past a limit; undone below if it is not sent
     for (const [type, { sent }] of Object.entries(LIMITS)) sent.set(keys[type], [...(sent.get(keys[type]) || []), now]);
 
-    const name = String(user.name || user.email).replace(/\s+/g, " ").trim();
+    // The name the sender typed on the join screen, else their Google name; the verified email is always shown next to it.
+    // "Guest" is what the server stores when no name was typed, so it does not count as a typed name.
+    const typedName = socket.data.name !== "Guest" ? socket.data.name : null;
+    const name = String(typedName || user.name || user.email).replace(/\s+/g, " ").trim();
     let failure;
     try {
       const token = await gmailAccessToken(googleClientId);
