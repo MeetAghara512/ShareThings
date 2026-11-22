@@ -6,6 +6,7 @@ const { createHash, randomBytes } = require("crypto");
 const { Server } = require("socket.io");
 const { OAuth2Client } = require("google-auth-library");
 const { sendInvite } = require("./invite");
+const { getIceServers } = require("./turn");
 const { limitConnections, joinLimited, peekLimited } = require("./limits");
 
 const app = express();
@@ -53,31 +54,6 @@ async function verifyGoogleToken(token) {
     return null;
   }
 }
-const STUN_ONLY = [{ urls: "stun:stun.l.google.com:19302" }];
-
-// Short-lived TURN credentials from Xirsys; falls back to STUN when not configured
-async function getIceServers() {
-  const { XIRSYS_IDENT, XIRSYS_SECRET, XIRSYS_CHANNEL } = process.env;
-  if (!XIRSYS_IDENT || !XIRSYS_SECRET || !XIRSYS_CHANNEL) return STUN_ONLY;
-  try {
-    const res = await fetch(`https://global.xirsys.net/_turn/${XIRSYS_CHANNEL}`, {
-      method: "PUT",
-      headers: {
-        Authorization: "Basic " + Buffer.from(`${XIRSYS_IDENT}:${XIRSYS_SECRET}`).toString("base64"),
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ format: "urls" }),
-      signal: AbortSignal.timeout(5000)
-    });
-    const { s, v } = await res.json();
-    if (s !== "ok") throw new Error(v);
-    return [].concat(v.iceServers);
-  } catch (err) {
-    console.error("TURN credentials unavailable, using STUN only:", err.message);
-    return STUN_ONLY;
-  }
-}
-
 // The random id a browser tab sends with room:join and room:peek, or null
 const validClientId = id => (typeof id === "string" && /^[\w-]{16,64}$/.test(id) ? id : null);
 // What the other person gets instead of the clientId, which would let them take this seat
