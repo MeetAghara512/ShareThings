@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { FaComments, FaDownload, FaFileAlt, FaPaperPlane, FaPaperclip, FaTimes } from "react-icons/fa";
+import { FaDownload, FaFileAlt, FaPaperPlane, FaPaperclip, FaTimes } from "react-icons/fa";
+import { MdChatBubbleOutline } from "react-icons/md";
 import * as chat from "../Services/chat";
 
 const useChat = () => useSyncExternalStore(chat.subscribe, chat.getState);
@@ -10,8 +11,9 @@ const formatSize = bytes =>
 	bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 const formatTime = at => new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
-// The Chat button in the call's button row, with the number of unread messages and files
-export const ChatButton = () => {
+// The round Chat button in the call's control bar, with the number of unread messages and files.
+// className sets its shape and look its colours while closed; open, it is highlighted
+export const ChatButton = ({ className, look }) => {
 	const { open, unread } = useChat();
 
 	// Also in the tab title, for when the call is in a background tab
@@ -27,9 +29,10 @@ export const ChatButton = () => {
 			onClick={() => chat.setOpen(!open)}
 			aria-pressed={open}
 			aria-label={unread ? `Chat, ${unread} unread` : "Chat"}
-			className={`relative ${open ? "bg-indigo-600 hover:bg-indigo-700" : "bg-gray-700 hover:bg-gray-600"} text-white px-5 py-2 rounded-full flex items-center gap-2 shadow-sm transition-transform hover:-translate-y-1`}
+			title="Chat"
+			className={`relative ${className} ${open ? "bg-indigo-600 hover:bg-indigo-700 text-white" : look}`}
 		>
-			<FaComments /> Chat
+			<MdChatBubbleOutline />
 			{unread > 0 && (
 				<span className="absolute -top-1.5 -right-1.5 min-w-[1.25rem] h-5 px-1 rounded-full bg-red-500 text-white text-xs font-semibold flex items-center justify-center">
 					{unread > 99 ? "99+" : unread}
@@ -132,7 +135,7 @@ const ChatPanel = ({ darkMode, remoteName }) => {
 			aria-label="Chat"
 			onDragOver={e => e.preventDefault()}
 			onDrop={handleDrop}
-			className={`fixed z-40 inset-x-0 bottom-0 h-[75vh] lg:inset-x-auto lg:right-4 lg:bottom-4 lg:top-24 lg:h-auto lg:w-96 flex flex-col rounded-t-2xl lg:rounded-2xl shadow-2xl border ` +
+			className={`fixed z-40 inset-x-0 bottom-0 h-[75vh] lg:inset-x-auto lg:right-4 lg:bottom-20 lg:top-4 lg:h-auto lg:w-96 flex flex-col rounded-t-2xl lg:rounded-2xl shadow-2xl border ` +
 				(darkMode ? "bg-gray-800 border-gray-700 text-gray-100" : "bg-white border-gray-200 text-gray-900")}
 		>
 			<header className={`flex items-center justify-between gap-2 px-4 py-3 border-b ${darkMode ? "border-gray-700" : "border-gray-200"}`}>

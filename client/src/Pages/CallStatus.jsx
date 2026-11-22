@@ -35,7 +35,7 @@ const readStats = report => {
 	return { rtt: pair?.currentRoundTripTime, received, lost };
 };
 
-// Call timer and connection quality; mounted only while the call is connected
+// Call timer and connection quality, in the control bar; mounted only while the call is connected
 const CallStatus = ({ connection, since, reconnecting }) => {
 	const [now, setNow] = useState(Date.now);
 	const [quality, setQuality] = useState(null);
@@ -71,15 +71,15 @@ const CallStatus = ({ connection, since, reconnecting }) => {
 
 	const q = QUALITY[quality];
 	return (
-		<div className="absolute top-4 left-4 flex items-center gap-3 px-3 py-1 rounded bg-black/60 text-white text-sm">
+		<div className="flex items-center gap-3">
 			<span className="tabular-nums">{formatDuration(Math.max(0, Math.floor((now - since) / 1000)))}</span>
 			{reconnecting ? (
-				<span className="text-yellow-300 animate-pulse">Reconnecting...</span>
+				<span className="text-yellow-500 animate-pulse">Reconnecting...</span>
 			) : q && (
 				<span className="flex items-center gap-1.5" title={`${q.text} connection`}>
 					<span className="flex items-end gap-0.5 h-3">
 						{[1, 2, 3].map(n => (
-							<span key={n} className={`w-1 rounded-sm ${n <= q.bars ? q.color : "bg-white/30"}`} style={{ height: `${n * 33}%` }} />
+							<span key={n} className={`w-1 rounded-sm ${n <= q.bars ? q.color : "bg-gray-400/40"}`} style={{ height: `${n * 33}%` }} />
 						))}
 					</span>
 					{q.text}
