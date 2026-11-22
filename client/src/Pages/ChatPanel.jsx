@@ -43,9 +43,9 @@ export const ChatButton = () => {
 const formatDuration = seconds =>
 	seconds < 60 ? "under a minute" : seconds < 3600 ? `${Math.round(seconds / 60)} min` : `${Math.floor(seconds / 3600)} h ${Math.round((seconds % 3600) / 60)} min`;
 
-const LABELS = { queued: "Waiting to send", preparing: "Preparing...", waiting: "Waiting to continue", sent: "Sent", done: "Received", saved: "Saved", declined: "Declined", cancelled: "Cancelled" };
+const LABELS = { queued: "Waiting to send", preparing: "Preparing...", sent: "Sent", done: "Received", saving: "Saving to the chosen place...", unsaved: "Finished. Press Save to put it where you chose", saved: "Saved", declined: "Declined", cancelled: "Cancelled" };
 
-const FileItem = ({ item, remoteName }) => {
+const FileItem = ({ item, remoteName, ready }) => {
 	const percent = Math.min(100, Math.floor((item.done / item.size) * 100)) || 0;
 	const moving = item.status === "sending" || item.status === "receiving";
 	const left = item.speed > 0 && (item.size - item.done) / item.speed;
@@ -53,11 +53,16 @@ const FileItem = ({ item, remoteName }) => {
 		? [`${percent}%`, left !== false && `${formatSize(item.speed)}/s`, left !== false && `${formatDuration(left)} left`].filter(Boolean).join(" \u00b7 ")
 		: item.status === "paused" ? `Paused at ${percent}%`
 		: item.status === "offered" ? (item.mine ? `Waiting for ${remoteName || "the other person"} to accept` : item.eta ? `${item.rough ? "Up to" : "About"} ${formatDuration(item.eta)} to receive` : "Wants to send you this file")
+		// The other person left or is reloading; it continues by itself when both are in the call
+		: item.status === "waiting" ? (item.mine ? `Paused \u2014 waiting for ${item.to || "the other person"}` : `Paused at ${percent}% \u00b7 ${ready ? "continuing\u2026" : `waiting for ${item.name || "the other person"}`}`)
 		: item.note || LABELS[item.status];
+	// Free space a large file needs, shown when it is tight
+	const needs = item.needs && (item.status === "offered" || item.status === "failed") ? ` \u00b7 needs ${formatSize(item.needs)} free${item.moment ? " for a moment" : ""}` : "";
 	const actions = item.status === "offered" && !item.mine ? [["Accept", files.accept, true], ["Decline", files.decline]]
 		: item.status === "relay" ? [["Send anyway", files.sendAnyway, true], ["Cancel", files.cancel]]
 		: moving ? [["Pause", files.pause], ["Cancel", files.cancel]]
 		: item.status === "paused" ? [["Resume", files.resume, true], ["Cancel", files.cancel]]
+		: item.status === "unsaved" ? [["Save", files.saveFile, true]]
 		: ["queued", "preparing", "offered", "waiting"].includes(item.status) ? [["Cancel", files.cancel]]
 		: [];
 
@@ -69,7 +74,7 @@ const FileItem = ({ item, remoteName }) => {
 			</div>
 			<p className="text-xs">
 				<span className="opacity-80">{formatSize(item.size)}</span>
-				{label && <span className={item.status === "failed" ? "text-red-400 font-medium" : "opacity-80"}>{" \u00b7 "}{label}</span>}
+				{label && <span className={item.status === "failed" ? "text-red-400 font-medium" : "opacity-80"}>{" \u00b7 "}{label}{needs}</span>}
 			</p>
 			{(moving || item.status === "paused" || item.status === "waiting") && (
 				<div
@@ -112,13 +117,14 @@ const FileItem = ({ item, remoteName }) => {
 
 // Chat and file sharing with the other person. Mounted while in the room; shown when opened
 const ChatPanel = ({ darkMode, remoteName }) => {
-	const { ready, open, items } = useChat();
+	const { ready, filesOk, open, items } = useChat();
 	const [text, setText] = useState("");
 	const listRef = useRef(null);
 	const fileRef = useRef(null);
 
 	useEffect(() => chat.setPeerName(remoteName), [remoteName]);
 	useEffect(() => chat.clearChat, []); // leaving the room: nothing is kept
+	useEffect(() => void files.restore(), []); // files left unfinished by a reload or leaving the room continue
 
 	// Keep the newest message in view
 	useEffect(() => {
@@ -137,7 +143,7 @@ const ChatPanel = ({ darkMode, remoteName }) => {
 	};
 	const handleDrop = e => {
 		e.preventDefault();
-		if (ready) files.sendFiles([...e.dataTransfer.files]);
+		if (filesOk) files.sendFiles([...e.dataTransfer.files]);
 	};
 
 	const muted = darkMode ? "text-gray-400" : "text-gray-500";
@@ -176,7 +182,7 @@ const ChatPanel = ({ darkMode, remoteName }) => {
 						<div className={`max-w-[85%] px-3 py-2 rounded-2xl whitespace-pre-wrap [overflow-wrap:anywhere] ` +
 							(item.mine ? "bg-indigo-600 text-white" : darkMode ? "bg-gray-700" : "bg-gray-100")}
 						>
-							{item.kind === "text" ? item.text : <FileItem item={item} remoteName={remoteName} />}
+							{item.kind === "text" ? item.text : <FileItem item={item} remoteName={remoteName} ready={ready} />}
 						</div>
 					</div>
 				))}
@@ -184,11 +190,12 @@ const ChatPanel = ({ darkMode, remoteName }) => {
 
 			<form onSubmit={handleSubmit} className={`p-3 space-y-2 border-t ${darkMode ? "border-gray-700" : "border-gray-200"}`}>
 				{!ready && <p className={`text-xs ${muted}`}>Chat starts when the other person is connected.</p>}
+				{ready && !filesOk && <p className={`text-xs ${muted}`}>Ask them to reload the page to send files.</p>}
 				<div className="flex items-center gap-2">
 					<button
 						type="button"
 						onClick={() => fileRef.current?.click()}
-						disabled={!ready}
+						disabled={!filesOk}
 						aria-label="Send a file"
 						title="Send a file"
 						className={`${iconButton} ${darkMode ? "hover:bg-gray-700" : "hover:bg-gray-100"}`}

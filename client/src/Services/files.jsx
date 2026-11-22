@@ -4,8 +4,8 @@ import { add, update, bump, parse, getPeerName, registerFiles } from "./chat";
 // Files over the call's "files" data channel, from a few bytes to many GB (chat.jsx runs the channels).
 //
 //   sender                                        receiver
-//   offer {id, key, name, size, rate}       ->    up to 100 MB: taken at once and kept in memory;
-//                                                 bigger: Accept, then written to disk as it arrives
+//   offer {id, key, name, size,             ->    up to 100 MB: taken at once; bigger: Accept. Either
+//          modified, rate}                        way written to disk (private storage) as it arrives
 //                                           <-    pull {id, from, seq}: send from block `from` on
 //   run {id, from, seq}, binary pieces, and
 //   block {id, index, hash} after each 8 MB ->    SHA-256 checked, written, then
@@ -14,15 +14,17 @@ import { add, update, bump, parse, getPeerName, registerFiles } from "./chat";
 //
 // The receiver always says where to continue, so a pause, a damaged block, a new connection and a
 // reload all resume the same way. A transfer only continues with the same person (hello's "me").
+// Received files never sit in memory: each block goes to the browser's private storage (OPFS), and a
+// file picked at Accept gets the finished file streamed from there. Only browsers without private
+// storage keep files, up to 100 MB, in memory.
 
 const BLOCK = 8 * 1024 * 1024; // checked with SHA-256 and written to disk as one
-const MEMORY_MAX = 100 * 1024 * 1024; // up to this size files arrive without Accept and wait in memory for Save
+const ACCEPT_OVER = 100 * 1024 * 1024; // bigger files wait for Accept; also the limit without private storage
 const RELAY_ASK = 500 * 1024 * 1024; // over a relay, ask before sending more than this
 const AHEAD = 2; // blocks sent ahead of what the receiver has stored, so its memory stays flat
 const QUEUE_MAX = 1024 * 1024; // at most this much waiting in the channel, so the call keeps priority
 const POOR_RATE = 128 * 1024; // bytes per second while the call quality is Poor
 const SPARE = 64 * 1024 * 1024; // free space to keep on top of the file
-const PARTIALS = "sharethings.partials"; // unfinished files in private storage: key -> last used
 const DAY = 24 * 60 * 60 * 1000;
 
 const THEIR_STOP = { __proto__: null, space: "Stopped: not enough disk space on their side", write: "Stopped: they could not save the file", damaged: "Stopped: the file kept arriving damaged" };
@@ -32,6 +34,8 @@ const DECLINED = { __proto__: null, space: "Declined: not enough free space on t
 const outgoing = []; // ours, in order; one at a time per person
 const incoming = new Map(); // theirs, by id
 const finished = new Set(); // ids fully received, so a late repeat of the offer is just confirmed
+const unsaved = new Map(); // finished files still to be copied to the place picked at Accept, by item
+const delivered = new Set(); // finished files in private storage offered for Save, deleted when leaving the room
 let link = null; // the open channels, once both sides said hello
 let inbound = null; // the incoming transfer the next binary pieces belong to
 let callStats = {}; // from CallStatus: { quality, relay, bitrate }
@@ -47,7 +51,7 @@ const sha = async data => hex(await crypto.subtle.digest("SHA-256", data));
 const send = msg => link?.files.readyState === "open" && link.files.send(JSON.stringify(msg));
 const blocksOf = size => Math.ceil(size / BLOCK);
 const blockSize = (t, index) => Math.min(BLOCK, t.size - index * BLOCK);
-const byItem = item => outgoing.find(t => t.item === item) || [...incoming.values()].find(t => t.item === item);
+const byItem = item => outgoing.find(t => t.item === item) || [...incoming.values()].find(t => t.item === item) || unsaved.get(item);
 const moving = t => t.status === "sending" || t.status === "receiving";
 
 const setStatus = (t, status, extra) => {
@@ -84,25 +88,41 @@ const cleanName = name => {
 	return (n.length > 120 ? n.slice(0, 60) + "_" + n.slice(-59) : n) || "file";
 };
 
-// Unfinished files in the browser's private storage, so a reload can continue them
-const partials = () => {
-	try {
-		return JSON.parse(localStorage.getItem(PARTIALS)) || {};
-	} catch {
-		return {};
-	}
+// Files on disk being received, kept in IndexedDB so a reload can continue them:
+// { part (its file in private storage), key, id, name, size, modified, from, room, target (the file picked at Accept, if any), at }
+let database = null;
+const records = (mode, use) => {
+	database ??= new Promise((resolve, reject) => {
+		const open = indexedDB.open("sharethings-files", 1);
+		open.onupgradeneeded = () => open.result.createObjectStore("partials", { keyPath: "part" });
+		open.onsuccess = () => resolve(open.result);
+		open.onerror = () => reject(open.error);
+	});
+	return database.then(db => new Promise((resolve, reject) => {
+		const tx = db.transaction("partials", mode);
+		const request = use(tx.objectStore("partials"));
+		tx.oncomplete = () => resolve(request.result);
+		tx.onerror = tx.onabort = () => reject(tx.error);
+	}));
 };
-const markPartial = (key, keep) => {
-	const all = partials();
-	if (keep) all[key] = Date.now();
-	else delete all[key];
-	try {
-		localStorage.setItem(PARTIALS, JSON.stringify(all));
-	} catch {}
-};
+const keepRecord = t => records("readwrite", s => s.put({ part: t.part, key: t.key, id: t.id, name: t.name, size: t.size, modified: t.modified, from: t.from, room: t.room, target: t.target || null, at: Date.now() })).catch(() => {});
+const forget = part => records("readwrite", s => s.delete(part)).catch(() => {});
+// Only the very same file continues a partial one: same key, size, name and last-modified time
+const same = (x, msg) => x.key === msg.key && x.size === msg.size && x.name === cleanName(msg.name) && x.modified === msg.modified;
 
 // Private storage (OPFS) is written by a worker: only workers get the fast synchronous file handles
+const hasDisk = !!navigator.storage?.getDirectory;
 const folder = async () => (await navigator.storage.getDirectory()).getDirectoryHandle("incoming-files", { create: true });
+const diskFile = async part => (await (await folder()).getFileHandle(part)).getFile();
+const discard = t => {
+	if (!t.part) return;
+	forget(t.part);
+	folder().then(dir => dir.removeEntry(t.part)).catch(() => {});
+};
+const freeSpace = async () => {
+	const space = await navigator.storage?.estimate?.().catch(() => null);
+	return space ? space.quota - space.usage : Infinity;
+};
 const calls = new Map();
 let worker = null;
 let lastCall = 0;
@@ -126,7 +146,24 @@ const disk = (op, args, transfer = []) => new Promise((resolve, reject) => {
 });
 
 // Where a received file goes. Every sink has: have (blocks already stored), write(bytes, at),
-// close() -> link for Save (null when already saved), abort() deletes what was written
+// close() -> link for Save (none for disk: see deliver), abort() deletes what was written
+const diskSink = async t => {
+	// Its own file, so sending the same file again never touches an earlier copy waiting to be saved
+	const name = (t.part ??= `${t.key}-${Date.now().toString(36)}.part`);
+	const length = await disk("open", { name });
+	return {
+		have: length >= t.size ? t.blocks : Math.floor(length / BLOCK),
+		write: (bytes, at) => disk("write", { name, at, bytes }, [bytes]),
+		close: () => disk("close", { name }),
+		release: () => disk("close", { name }), // leaving the room: keep the file for a later visit
+		abort: async () => {
+			await disk("close", { name }).catch(() => {});
+			discard(t);
+		},
+	};
+};
+
+// Only for browsers without private storage, and files up to 100 MB
 const memorySink = () => {
 	const parts = [];
 	return {
@@ -138,64 +175,28 @@ const memorySink = () => {
 	};
 };
 
-// Chrome / Edge: straight into the file the receiver picked (kept as a temporary file until the end)
-const pickerSink = async handle => {
-	const writable = await handle.createWritable();
-	return {
-		have: 0,
-		write: (bytes, at) => writable.write({ type: "write", position: at, data: bytes }),
-		close: async () => {
-			await writable.close();
-			return null;
-		},
-		abort: async () => {
-			await writable.abort().catch(() => {});
-			await handle.remove?.().catch(() => {});
-		},
-	};
-};
-
-// Other browsers: private storage, saved as a normal download at the end. It survives a reload
-const opfsSink = async (key, size) => {
-	const name = key + ".part";
-	const length = await disk("open", { name });
-	markPartial(key, true);
-	return {
-		have: Math.min(Math.floor(length / BLOCK), blocksOf(size)),
-		write: (bytes, at) => disk("write", { name, at, bytes }, [bytes]),
-		close: async () => {
-			await disk("close", { name });
-			markPartial(key, false);
-			const file = await (await (await folder()).getFileHandle(name)).getFile();
-			return URL.createObjectURL(new Blob([file], { type: "application/octet-stream" }));
-		},
-		release: () => disk("close", { name }), // leaving the room: keep the partial file for later
-		abort: async () => {
-			await disk("close", { name }).catch(() => {});
-			markPartial(key, false);
-			await (await folder()).removeEntry(name).catch(() => {});
-		},
-	};
-};
-
 // Leftovers from earlier visits: finished files, and unfinished ones not continued within a day
 const tidy = async () => {
-	for (const [key, at] of Object.entries(partials())) if (Date.now() - at > DAY) markPartial(key, false);
-	const keep = partials();
 	const dir = await folder();
+	const keep = new Set();
+	for (const record of await records("readonly", s => s.getAll())) {
+		const used = await diskFile(record.part).then(f => f.lastModified, () => 0);
+		if (Math.max(record.at, used) > Date.now() - DAY) keep.add(record.part);
+		else forget(record.part);
+	}
 	const names = [];
 	for await (const name of dir.keys()) names.push(name);
-	for (const name of names) if (!keep[name.replace(/\.part$/, "")]) await dir.removeEntry(name).catch(() => {});
+	for (const name of names) if (!keep.has(name)) await dir.removeEntry(name).catch(() => {});
 };
-if (navigator.storage?.getDirectory) tidy().catch(() => {});
+if (hasDisk) tidy().catch(() => {});
 
 // Sending
 
 export const sendFiles = list => {
-	if (!link) return;
+	if (link?.version !== 2) return; // the other side runs an older version of the app (see ChatPanel)
 	for (const file of list) {
 		const t = { id: crypto.randomUUID(), file, name: file.name, size: file.size, blocks: blocksOf(file.size), peer: link.peer, mine: true, acked: 0, sent: 0, runs: 0 };
-		t.item = add({ kind: "file", mine: true, fileName: file.name, size: file.size, done: 0, status: "queued" });
+		t.item = add({ kind: "file", mine: true, to: getPeerName(), fileName: file.name, size: file.size, done: 0, status: "queued" });
 		t.status = "queued";
 		if (file.size) outgoing.push(t);
 		else setStatus(t, "failed", { note: "Not sent: the file is empty" });
@@ -229,7 +230,7 @@ const offer = t => {
 	// For the receiver's time estimate: the speed of an earlier file in this call, else the call's own
 	// bandwidth estimate, which is usually lower than what files get, so the time is an upper bound
 	const rate = Math.round(lastSpeed || (callStats.bitrate || 0) / 8) || undefined;
-	send({ type: "offer", id: t.id, key: t.key, name: t.name, size: t.size, rate, measured: lastSpeed > 0 || undefined, paused: t.paused || undefined });
+	send({ type: "offer", id: t.id, key: t.key, name: t.name, size: t.size, modified: t.file.lastModified, rate, measured: lastSpeed > 0 || undefined, paused: t.paused || undefined });
 };
 
 export const sendAnyway = item => {
@@ -327,26 +328,47 @@ const onDecline = msg => {
 
 // Receiving
 
-const onOffer = msg => {
+const receiver = ({ id, key, name, size, modified }) => ({ id, key, name: cleanName(name), size, modified, blocks: blocksOf(size), have: 0, got: 0, seq: 0, runs: 0, pending: 0, damaged: 0, chain: Promise.resolve() });
+
+const onOffer = async msg => {
 	const { id, key, name, size } = msg;
-	if (typeof key !== "string" || key.length > 64 || typeof name !== "string" || !Number.isSafeInteger(size) || size < 1 || outgoing.some(t => t.id === id)) return;
+	// Only the 32 hex characters a sender makes for the key, a real size and a last-modified time
+	if (!/^[0-9a-f]{32}$/.test(key) || typeof name !== "string" || !Number.isSafeInteger(size) || size < 1 || !Number.isSafeInteger(msg.modified) || outgoing.some(t => t.id === id)) return;
 	if (finished.has(id)) return send({ type: "ack", id, have: blocksOf(size) });
-	let t = incoming.get(id) || [...incoming.values()].find(x => x.key === key && x.size === size);
+	let t = incoming.get(id);
+	if (t && !same(t, msg)) return; // the same id for a different file
+	t ||= [...incoming.values()].find(x => same(x, msg));
 	if (t) {
 		// The same file again: after a new connection, or picked again after the sender reloaded
 		incoming.delete(t.id);
 		incoming.set((t.id = id), t);
 		t.paused ||= msg.paused === true;
-		if (!t.sink) return; // still waiting for Accept, or getting ready to receive
-		return t.paused ? setStatus(t, "paused") : pull(t);
+		if (t.sink) return t.paused ? setStatus(t, "paused") : pull(t);
+		// Listed again after a reload (restore): open its file and continue where it stopped
+		if (t.accepted && t.status === "waiting") take(t, () => diskSink(t));
+		return;
 	}
 	const rate = Number.isFinite(msg.rate) && msg.rate > 0 ? msg.rate : 0;
-	t = { id, key, name: cleanName(name), size, blocks: blocksOf(size), have: 0, got: 0, seq: 0, runs: 0, pending: 0, damaged: 0, chain: Promise.resolve(), status: "offered" };
+	t = Object.assign(receiver(msg), { status: "offered", from: getPeerName(), room: location.pathname });
 	incoming.set(id, t);
-	t.item = add({ kind: "file", mine: false, name: getPeerName(), fileName: t.name, size, done: 0, status: "offered", eta: rate && size / rate, rough: msg.measured !== true });
+	t.item = add({ kind: "file", mine: false, name: t.from, fileName: t.name, size, done: 0, status: "offered", eta: rate && size / rate, rough: msg.measured !== true });
 	bump();
-	if (partials()[key]) take(t, () => opfsSink(key, size)); // accepted before this page reloaded: continue
-	else if (size <= MEMORY_MAX) take(t, memorySink);
+	const still = () => incoming.get(id) === t && t.status === "offered";
+	if (!hasDisk) {
+		if (size <= ACCEPT_OVER) return take(Object.assign(t, { accepted: true }), memorySink);
+		send({ type: "decline", id, reason: "write" });
+		return drop(t, "failed", "This browser can only receive files up to 100 MB");
+	}
+	const record = (await records("readonly", s => s.getAll()).catch(() => [])).find(r => same(r, msg));
+	if (!still()) return;
+	if (record) return take(Object.assign(t, { accepted: true, target: record.target, part: record.part }), () => diskSink(t)); // accepted before a reload
+	const free = await freeSpace();
+	if (!still()) return;
+	if (size <= ACCEPT_OVER) return free < size + SPARE ? refuse(Object.assign(t, { accepted: true })) : take(Object.assign(t, { accepted: true }), () => diskSink(t));
+	// Bigger files wait for Accept. When space is tight, say what they need: the file's size, and for a
+	// moment twice that while it is copied to a place picked at Accept
+	if (free < size + SPARE) update(t.item, { needs: size });
+	else if (window.showSaveFilePicker && free < 2 * size + SPARE) update(t.item, { needs: 2 * size, moment: true });
 };
 
 const take = async (t, makeSink) => {
@@ -360,33 +382,70 @@ const take = async (t, makeSink) => {
 		return drop(t, "failed", "This browser could not save the file");
 	}
 	if (!incoming.has(t.id)) return t.sink.abort();
+	if (t.sink.release) keepRecord(t); // on disk: a reload can continue it
 	t.have = t.sink.have;
 	t.got = t.have * BLOCK;
-	if (t.have < t.blocks) return pull(t);
-	send({ type: "ack", id: t.id, have: t.have });
-	complete(t);
+	if (t.have === t.blocks) {
+		send({ type: "ack", id: t.id, have: t.have });
+		return complete(t);
+	}
+	if (t.paused) return setStatus(t, "paused");
+	pull(t);
+};
+
+// Not enough free space for the copy in private storage
+const refuse = t => {
+	send({ type: "decline", id: t.id, reason: "space" });
+	drop(t, "failed", "Not enough free space on this device", { needs: t.size });
 };
 
 export const accept = async item => {
 	const t = byItem(item);
 	if (t?.mine || t?.status !== "offered") return;
 	setStatus(t, "receiving");
-	let handle = null;
+	// Where to save it at the end (Chrome / Edge); it is received into private storage first
 	if (window.showSaveFilePicker) {
 		try {
-			handle = await window.showSaveFilePicker({ suggestedName: t.name });
+			t.target = await window.showSaveFilePicker({ suggestedName: t.name });
 		} catch (e) {
 			if (e.name !== "AbortError") console.error("Save dialog failed", e);
+			else if (incoming.has(t.id)) {
+				// Closed the save dialog: that is a no
+				send({ type: "decline", id: t.id });
+				return drop(t, "declined");
+			}
 		}
 	}
-	if (handle) return take(t, () => pickerSink(handle));
-	const space = await navigator.storage?.estimate?.().catch(() => null);
+	t.accepted = true;
+	const free = await freeSpace();
 	if (!incoming.has(t.id)) return; // cancelled meanwhile
-	if (space && space.quota - space.usage < t.size + SPARE) {
-		send({ type: "decline", id: t.id, reason: "space" });
-		return drop(t, "failed", "Not enough free space on this device for this file");
+	if (free < t.size + SPARE) return refuse(t);
+	take(t, () => diskSink(t));
+};
+
+// Entering the room, also after a reload: list this room's unfinished files again (and finished ones
+// not yet saved). They continue by themselves once the sender is back in the call
+export const restore = async () => {
+	if (!hasDisk) return;
+	const known = record => incoming.has(record.id) || [...incoming.values(), ...unsaved.values()].some(x => x.key === record.key);
+	try {
+		for (const record of await records("readonly", s => s.getAll())) {
+			if (known(record)) continue;
+			const length = await diskFile(record.part).then(f => f.size, e => (e.name === "NotFoundError" ? null : -1));
+			if (length === null) forget(record.part);
+			if (!(length >= 0)) continue; // gone, or open in another tab
+
+			const t = Object.assign(receiver(record), { part: record.part, from: record.from, room: record.room, target: record.target, accepted: true, status: "waiting" });
+			t.have = length >= t.size ? t.blocks : Math.floor(length / BLOCK);
+			if ((t.have < t.blocks && record.room !== location.pathname) || known(record)) continue;
+			t.got = t.have * BLOCK;
+			t.item = add({ kind: "file", mine: false, name: t.from, fileName: t.name, size: t.size, done: t.got, status: "waiting" });
+			if (t.have < t.blocks) incoming.set(t.id, t);
+			else deliver(t);
+		}
+	} catch (e) {
+		console.error("Unfinished files not listed", e);
 	}
-	take(t, () => opfsSink(t.key, t.size));
 };
 
 export const decline = item => {
@@ -462,7 +521,8 @@ const complete = async t => {
 	if (inbound === t) inbound = null;
 	try {
 		const url = await t.sink.close();
-		setStatus(t, url ? "done" : "saved", { url, done: t.size });
+		if (url) setStatus(t, "done", { url, done: t.size });
+		else await deliver(t);
 	} catch (e) {
 		console.error("File not saved", e);
 		t.sink.abort();
@@ -470,13 +530,56 @@ const complete = async t => {
 	}
 };
 
+// The whole file is on disk: copy it to the place picked at Accept, or offer it for Save. The link
+// points at the file on disk, so saving it never loads it into memory
+const deliver = async t => {
+	if (t.target) return save(t);
+	forget(t.part);
+	delivered.add(t.part);
+	const url = URL.createObjectURL(new Blob([await diskFile(t.part)], { type: "application/octet-stream" }));
+	setStatus(t, "done", { url, done: t.size });
+};
+
+// Stream the finished file from private storage into the file picked at Accept, then delete the copy.
+// After a reload the browser may need a click to allow writing there again: that is the Save button
+const save = async (t, ask = false) => {
+	unsaved.set(t.item, t);
+	const mode = { mode: "readwrite" };
+	let allowed = (await t.target.queryPermission?.(mode).catch(() => "denied")) === "granted";
+	if (!allowed && ask) allowed = (await t.target.requestPermission?.(mode).catch(() => "denied")) === "granted";
+	if (!allowed && !ask) return setStatus(t, "unsaved", { done: t.size });
+	if (!allowed) {
+		// Not allowed there: offer it as a normal download instead
+		unsaved.delete(t.item);
+		t.target = null;
+		return deliver(t);
+	}
+	setStatus(t, "saving", { done: t.size });
+	try {
+		await (await diskFile(t.part)).stream().pipeTo(await t.target.createWritable());
+	} catch (e) {
+		console.error("File not saved", e);
+		const note = e.name === "QuotaExceededError" ? "Not enough disk space to save it there. Free some space, then press Save" : "Could not save it there. Press Save to try again";
+		return setStatus(t, "unsaved", { done: t.size, note });
+	}
+	unsaved.delete(t.item);
+	discard(t);
+	setStatus(t, "saved", { done: t.size });
+};
+
+export const saveFile = item => {
+	const t = unsaved.get(item);
+	if (t?.status === "unsaved") save(t, true);
+};
+
 // Forget an incoming file and delete what was written
-const drop = (t, status, note) => {
+const drop = (t, status, note, extra) => {
 	incoming.delete(t.id);
 	if (inbound === t) inbound = null;
 	t.collect = null;
-	t.sink?.abort();
-	setStatus(t, status, { note });
+	if (t.sink) t.sink.abort();
+	else if (t.accepted && hasDisk) discard(t);
+	setStatus(t, status, { note, ...extra });
 };
 
 const stop = (t, reason) => {
@@ -534,7 +637,10 @@ const onCancel = msg => {
 	if (r) drop(r, "cancelled");
 };
 
-const HANDLERS = { __proto__: null, offer: onOffer, pull: onPull, run: onRun, block: onBlock, ack: onAck, decline: onDecline, pause: onPause, resume: onResume, cancel: onCancel };
+// An older version of the app sends "file-start": say no, so it does not wait forever
+const onOldStart = msg => send({ type: "file-cancel", id: msg.id });
+
+const HANDLERS = { __proto__: null, offer: onOffer, pull: onPull, run: onRun, block: onBlock, ack: onAck, decline: onDecline, pause: onPause, resume: onResume, cancel: onCancel, "file-start": onOldStart };
 
 registerFiles({
 	up(l) {
@@ -566,7 +672,12 @@ registerFiles({
 		outgoing.length = 0;
 		for (const t of incoming.values()) (t.sink?.release ?? t.sink?.abort)?.().catch(() => {});
 		incoming.clear();
+		unsaved.clear();
 		finished.clear();
 		inbound = null;
+		// Finished files offered for Save go too (the links are gone with the chat); files waiting to be
+		// saved to a picked place stay until then, or a day
+		delivered.forEach(part => folder().then(dir => dir.removeEntry(part)).catch(() => {}));
+		delivered.clear();
 	},
 });

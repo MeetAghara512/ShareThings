@@ -10,7 +10,7 @@ export const MAX_TEXT = 2000;
 const EARLY_MAX = 50; // file messages that may arrive just before the other side's hello
 
 // Screen state, read with useSyncExternalStore
-let state = { ready: false, open: false, unread: 0, items: [] };
+let state = { ready: false, filesOk: false, open: false, unread: 0, items: [] };
 const listeners = new Set();
 const set = patch => {
 	state = { ...state, ...patch };
@@ -91,7 +91,7 @@ const endLink = () => {
 	if (!l) return;
 	files.down?.(l);
 	if (l.ready) add({ kind: "note", text: "Call ended" });
-	set({ ready: false });
+	set({ ready: false, filesOk: false });
 };
 
 peer.onDataChannels = attach;
@@ -102,7 +102,7 @@ export const clearChat = () => {
 	endLink();
 	files.clear?.();
 	state.items.forEach(i => i.url && URL.revokeObjectURL(i.url));
-	set({ ready: false, open: false, unread: 0, items: [] });
+	set({ ready: false, filesOk: false, open: false, unread: 0, items: [] });
 	if (peer.chat) attach(peer.chat, peer.files);
 };
 
@@ -111,7 +111,9 @@ const onChat = (l, data) => {
 	if (msg?.type === "hello" && !l.ready) {
 		l.ready = true;
 		l.peer = typeof msg.me === "string" ? msg.me.slice(0, 64) : null;
-		set({ ready: true });
+		l.version = msg.v;
+		// Files need the same version on both sides; chat works with any
+		set({ ready: true, filesOk: msg.v === 2 });
 		files.up?.(l);
 		l.early.splice(0).forEach(early => files.message?.(l, early));
 	} else if (msg?.type === "chat" && l.ready && typeof msg.text === "string" && msg.text.trim() && msg.text.length <= MAX_TEXT) {
