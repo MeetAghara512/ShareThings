@@ -79,7 +79,8 @@ const attach = (chat, files) => {
 	chat.onclose = files.onclose = () => l === link && endLink();
 };
 
-// Connection gone (other person left, call ended or failed): unfinished transfers fail, partial data is dropped
+// Connection gone (other person left, or a reconnect replaced it): unfinished transfers fail, partial data is
+// dropped. No note here: a reconnect also ends the old connection while the call goes on (see peerLeft)
 const endLink = () => {
 	const l = link;
 	link = null;
@@ -93,9 +94,11 @@ const endLink = () => {
 	if (l.incoming && !l.incoming.discard) drop(l.incoming, { status: "failed", note: "Connection lost" });
 	l.queue = [];
 	l.sending = l.incoming = null;
-	if (l.ready) add({ kind: "note", text: "Call ended" });
 	set({ ready: false });
 };
+
+// The other person really left the room (the server's user:left): noted under the conversation, if there is one
+export const peerLeft = () => state.items.length > 0 && add({ kind: "note", text: `${peerName || "The other person"} left the call` });
 
 peer.onDataChannels = attach;
 if (peer.chat) attach(peer.chat, peer.files);

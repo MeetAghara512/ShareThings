@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useSyncExternalStore } from "react"
 import { FaDownload, FaFileAlt, FaPaperPlane, FaPaperclip, FaTimes } from "react-icons/fa";
 import { MdChatBubbleOutline } from "react-icons/md";
 import * as chat from "../Services/chat";
+import { useSocket } from "../useContext/SocketProvider";
 
 const useChat = () => useSyncExternalStore(chat.subscribe, chat.getState);
 // On wide screens the room makes space for the open panel, so it never covers the call controls
@@ -103,8 +104,14 @@ const ChatPanel = ({ darkMode, remoteName }) => {
 	const [text, setText] = useState("");
 	const listRef = useRef(null);
 	const fileRef = useRef(null);
+	const socket = useSocket();
 
 	useEffect(() => chat.setPeerName(remoteName), [remoteName]);
+	// Only a real departure gets a note; a reconnect also replaces the connection but the call goes on
+	useEffect(() => {
+		socket.on("user:left", chat.peerLeft);
+		return () => socket.off("user:left", chat.peerLeft);
+	}, [socket]);
 	useEffect(() => chat.clearChat, []); // leaving the room: nothing is kept
 
 	// Keep the newest message in view
