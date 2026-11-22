@@ -554,9 +554,9 @@ return (
 			</>
 		) : (
 			<>
-				{/* The stage fills the screen above the control bar: the page itself never scrolls. On phones with the
-				    chat open it keeps the top 40% (the chat sits under it, see ChatPanel); dvh follows the keyboard */}
-				<main className={`flex-1 min-h-0 px-2 pt-2 sm:px-4 sm:pt-4 ${chatOpen ? "lg:pr-[26rem] max-md:order-first max-md:flex-none max-md:h-[40dvh] max-md:min-h-[160px]" : ""}`}>
+				{/* The stage fills the screen above the control bar: the page itself never scrolls. Below lg (phones,
+				    tablets) with the chat open it keeps the top 40% (the chat sits under it, see ChatPanel); dvh follows the keyboard */}
+				<main className={`flex-1 min-h-0 px-2 pt-2 sm:px-4 sm:pt-4 ${chatOpen ? "lg:pr-[26rem] max-lg:order-first max-lg:flex-none max-lg:h-[40dvh] max-lg:min-h-[160px]" : ""}`}>
 					<div className="relative w-full h-full bg-black rounded-2xl overflow-hidden">
 						{/* Their sound plays here, so swapping the videos never cuts it */}
 						{showRemote && <audio autoPlay ref={(a) => a && a.srcObject !== remoteStream && (a.srcObject = remoteStream)} />}

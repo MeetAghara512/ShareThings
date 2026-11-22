@@ -167,13 +167,13 @@ const ChatPanel = ({ darkMode, remoteName }) => {
 	const muted = darkMode ? "text-gray-400" : "text-gray-500";
 	const iconButton = `shrink-0 w-10 h-10 rounded-full flex items-center justify-center transition-colors disabled:opacity-40 disabled:cursor-not-allowed`;
 
-	// Phones: not over the call but under it, between the video and the control bar (see Room.jsx)
+	// Below lg (phones, tablets): not over the call but under it, between the video and the control bar (see Room.jsx)
 	return (
 		<aside
 			aria-label="Chat"
 			onDragOver={e => e.preventDefault()}
 			onDrop={handleDrop}
-			className={`fixed z-40 inset-x-0 bottom-0 h-[75vh] max-md:static max-md:order-first max-md:flex-1 max-md:min-h-0 max-md:h-auto max-md:mx-2 sm:max-md:mx-4 max-md:mt-2 max-md:rounded-2xl max-md:shadow-none lg:inset-x-auto lg:right-4 lg:bottom-20 lg:top-4 lg:h-auto lg:w-96 flex flex-col rounded-t-2xl lg:rounded-2xl shadow-2xl border ` +
+			className={`fixed z-40 inset-x-0 bottom-0 h-[75vh] max-lg:static max-lg:order-first max-lg:flex-1 max-lg:min-h-0 max-lg:h-auto max-lg:mx-2 sm:max-lg:mx-4 max-lg:mt-2 max-lg:rounded-2xl max-lg:shadow-none lg:inset-x-auto lg:right-4 lg:bottom-20 lg:top-4 lg:h-auto lg:w-96 flex flex-col rounded-t-2xl lg:rounded-2xl shadow-2xl border ` +
 				(darkMode ? "bg-gray-800 border-gray-700 text-gray-100" : "bg-white border-gray-200 text-gray-900")}
 		>
 			<header className={`flex items-center justify-between gap-2 px-4 py-3 border-b ${darkMode ? "border-gray-700" : "border-gray-200"}`}>
