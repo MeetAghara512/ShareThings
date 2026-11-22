@@ -533,8 +533,34 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	}, []);
 	const status = callStart && <CallStatus connection={peer.peer} since={callStart} reconnecting={reconnecting} />;
 
+	// iPhone Safari lays the keyboard over the page and leaves dvh as it was (it ignores interactive-widget), so
+	// the chat input and the video would end up under the keyboard or panned away. While the visible part of the
+	// page is smaller than the window, --app-height and --app-top fit the call to it (pinch zoom is left alone)
+	useEffect(() => {
+		const vv = window.visualViewport;
+		if (!joined || !vv) return;
+		const root = document.documentElement.style;
+		const clear = () => {
+			root.removeProperty("--app-height");
+			root.removeProperty("--app-top");
+		};
+		const fit = () => {
+			if (Math.abs(vv.scale - 1) > 0.01 || innerHeight - vv.height < 1) return clear();
+			root.setProperty("--app-height", `${vv.height}px`);
+			root.setProperty("--app-top", `${vv.offsetTop}px`);
+		};
+		fit();
+		vv.addEventListener("resize", fit);
+		vv.addEventListener("scroll", fit);
+		return () => {
+			vv.removeEventListener("resize", fit);
+			vv.removeEventListener("scroll", fit);
+			clear();
+		};
+	}, [joined]);
+
 return (
-	<div className={`${joined ? "h-[100dvh] overflow-hidden" : "min-h-screen"} flex flex-col transition-colors duration-500 ${darkMode ? "bg-zinc-900 text-white" : "bg-gray-100 text-gray-900"}`}>
+	<div className={`${joined ? "relative top-[var(--app-top,0px)] h-[var(--app-height,100dvh)] overflow-hidden" : "min-h-screen"} flex flex-col transition-colors duration-500 ${darkMode ? "bg-zinc-900 text-white" : "bg-gray-100 text-gray-900"}`}>
 		{!joined ? (
 			<>
 				<header className="flex justify-between items-center p-5 shadow border-b">
@@ -556,7 +582,7 @@ return (
 			<>
 				{/* The stage fills the screen above the control bar: the page itself never scrolls. Below lg (phones,
 				    tablets) with the chat open it keeps the top 40% (the chat sits under it, see ChatPanel); dvh follows the keyboard */}
-				<main className={`flex-1 min-h-0 px-2 pt-2 sm:px-4 sm:pt-4 ${chatOpen ? "lg:pr-[26rem] max-lg:order-first max-lg:flex-none max-lg:h-[40dvh] max-lg:min-h-[160px]" : ""}`}>
+				<main className={`flex-1 min-h-0 px-2 pt-2 sm:px-4 sm:pt-4 ${chatOpen ? "lg:pr-[26rem] max-lg:order-first max-lg:flex-none max-lg:h-[calc(var(--app-height,100dvh)*0.4)] max-lg:min-h-[160px]" : ""}`}>
 					<div className="relative w-full h-full bg-black rounded-2xl overflow-hidden">
 						{/* Their sound plays here, so swapping the videos never cuts it */}
 						{showRemote && <audio autoPlay ref={(a) => a && a.srcObject !== remoteStream && (a.srcObject = remoteStream)} />}
