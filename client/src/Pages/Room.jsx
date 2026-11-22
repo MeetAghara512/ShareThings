@@ -338,6 +338,17 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	// The meeting card shows while you wait alone and hides when someone joins; the info button toggles it
 	useEffect(() => setInfoOpen(!remoteSocketId), [remoteSocketId]);
 
+	// Call timer, quality and "Reconnecting...": in the control bar on wide screens; on phones, where the bar
+	// has no room, in the stage's top-left corner. Shown in one place only, so the stats are read once
+	const [wide, setWide] = useState(() => window.matchMedia("(min-width: 768px)").matches);
+	useEffect(() => {
+		const query = window.matchMedia("(min-width: 768px)");
+		const update = () => setWide(query.matches);
+		query.addEventListener("change", update);
+		return () => query.removeEventListener("change", update);
+	}, []);
+	const status = callStart && <CallStatus connection={peer.peer} since={callStart} reconnecting={reconnecting} />;
+
 return (
 	<div className={`${joined ? "h-[100dvh] overflow-hidden" : "min-h-screen"} flex flex-col transition-colors duration-500 ${darkMode ? "bg-zinc-900 text-white" : "bg-gray-100 text-gray-900"}`}>
 		{!joined ? (
@@ -434,6 +445,9 @@ return (
 								{!alone && <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-black/60 text-white text-xs">You</span>}
 							</div>
 						)}
+						{!wide && status && (
+							<div className="absolute top-3 left-3 z-10 px-2 py-1 rounded bg-black/60 text-white text-xs">{status}</div>
+						)}
 						{isScreen && (
 							<div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 max-w-[calc(100%-2rem)] px-4 py-2 rounded-full bg-indigo-600 text-white text-sm font-semibold shadow flex items-center gap-2 whitespace-nowrap">
 								<FaDesktop className="shrink-0" /> You are sharing your screen
@@ -447,7 +461,7 @@ return (
 				<ControlBar
 					darkMode={darkMode}
 					roomId={roomId}
-					status={callStart && <CallStatus connection={peer.peer} since={callStart} reconnecting={reconnecting} />}
+					status={wide && status}
 					muted={muted}
 					cameraOff={cameraOff}
 					isScreen={isScreen}
