@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { MdMic, MdMicOff, MdVideocam, MdVideocamOff, MdPresentToAll, MdCallEnd, MdInfoOutline, MdLightMode, MdDarkMode, MdContentCopy, MdCheck, MdClose, MdMailOutline } from "react-icons/md";
 import { ChatButton } from "./ChatPanel";
 import InviteForm from "./InviteForm";
+import { HELP, troubleText } from "../Services/devices";
 
 // Time of day, as in the corner of Google Meet
 const Clock = () => {
@@ -13,18 +14,36 @@ const Clock = () => {
 	return <span className="tabular-nums">{now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>;
 };
 
+// A red mic or camera button's "!": the device is blocked or missing
+export const TroubleMark = () => (
+	<span aria-hidden="true" className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-amber-400 text-black text-xs font-bold flex items-center justify-center">!</span>
+);
+
+// How to get a blocked or missing device working, shown after a click on its red button
+export const DeviceHelp = ({ kind, trouble, darkMode, onClose, className = "" }) => (
+	<div role="alert" className={`p-3 pr-9 rounded-xl shadow-2xl text-sm relative ${darkMode ? "bg-gray-800 text-gray-100" : "bg-white text-gray-900"} ${className}`}>
+		<p className="font-semibold">{troubleText(kind, trouble)}</p>
+		<p className="opacity-80">{HELP[trouble](kind)}</p>
+		<button type="button" onClick={onClose} title="Close" aria-label="Close help" className={`absolute top-2 right-2 p-1 rounded-full text-lg ${darkMode ? "hover:bg-gray-700" : "hover:bg-gray-100"}`}>
+			<MdClose />
+		</button>
+	</div>
+);
+
 // The call's one row of controls, like Google Meet: time, room and call status on the left, round
-// icon buttons in the middle, meeting details and the theme on the right
-const ControlBar = ({ darkMode, roomId, status, muted, cameraOff, isScreen, infoOpen, onToggleMic, onToggleCamera, onToggleShare, onToggleInfo, onToggleDarkMode, onLeave }) => {
+// icon buttons in the middle, meeting details and the theme on the right. trouble: a mic or camera
+// that is blocked or missing; its button is red with a "!" and its click tries to fix it
+const ControlBar = ({ darkMode, roomId, status, muted, cameraOff, trouble = {}, isScreen, infoOpen, onToggleMic, onToggleCamera, onToggleShare, onToggleInfo, onToggleDarkMode, onLeave }) => {
 	const round = "w-10 h-10 sm:w-12 sm:h-12 shrink-0 rounded-full flex items-center justify-center text-xl transition-colors";
 	const idle = darkMode ? "bg-gray-700 hover:bg-gray-600 text-white" : "bg-gray-200 hover:bg-gray-300 text-gray-800";
 	const off = "bg-red-600 hover:bg-red-700 text-white";
 	const on = "bg-indigo-600 hover:bg-indigo-700 text-white";
 	const plain = darkMode ? "hover:bg-gray-700" : "hover:bg-gray-200";
 	// Icon only: the label is the tooltip and what screen readers say
-	const button = (label, onClick, look, icon) => (
-		<button type="button" onClick={onClick} title={label} aria-label={label} className={`${round} ${look}`}>
+	const button = (label, onClick, look, icon, mark) => (
+		<button type="button" onClick={onClick} title={label} aria-label={label} className={`relative ${round} ${look}`}>
 			{icon}
+			{mark && <TroubleMark />}
 		</button>
 	);
 
@@ -38,8 +57,12 @@ const ControlBar = ({ darkMode, roomId, status, muted, cameraOff, isScreen, info
 			</div>
 
 			<div className="flex items-center gap-2 sm:gap-3">
-				{button(muted ? "Turn on microphone" : "Turn off microphone", onToggleMic, muted ? off : idle, muted ? <MdMicOff /> : <MdMic />)}
-				{button(cameraOff ? "Turn on camera" : "Turn off camera", onToggleCamera, cameraOff ? off : idle, cameraOff ? <MdVideocamOff /> : <MdVideocam />)}
+				{trouble.audio
+					? button(troubleText("audio", trouble.audio), onToggleMic, off, <MdMicOff />, true)
+					: button(muted ? "Turn on microphone" : "Turn off microphone", onToggleMic, muted ? off : idle, muted ? <MdMicOff /> : <MdMic />)}
+				{trouble.video
+					? button(troubleText("video", trouble.video), onToggleCamera, off, <MdVideocamOff />, true)
+					: button(cameraOff ? "Turn on camera" : "Turn off camera", onToggleCamera, cameraOff ? off : idle, cameraOff ? <MdVideocamOff /> : <MdVideocam />)}
 				{button(isScreen ? "Stop sharing" : "Share screen", onToggleShare, isScreen ? on : idle, <MdPresentToAll />)}
 				<ChatButton className={round} look={idle} />
 				<button type="button" onClick={onLeave} title="Leave call" aria-label="Leave call" className={`${round} w-14 sm:w-16 ${off}`}>

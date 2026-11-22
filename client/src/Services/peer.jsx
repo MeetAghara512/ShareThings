@@ -21,6 +21,11 @@ class PeerService {
 		this.onDataChannels?.(this.chat, this.files);
 	}
 
+	// The mic's or the camera's lane: the first transceiver of that kind (the screen's is the second video one)
+	lane(kind) {
+		return this.peer.getTransceivers().find(t => t.receiver.track.kind === kind) ?? null;
+	}
+
 	// A second video lane, after the camera's, for a shared screen. It is part of the first offer, so sharing
 	// later needs no new one. The offering side adds it once the camera is added (addTrack would take a free
 	// lane); the answering side gets it from the offer and must be able to send on it too.
