@@ -157,7 +157,7 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 
 	// Who is already in the room, kept fresh while this screen is open
 	useEffect(() => {
-		const check = () => socket.emit("room:peek", { room: roomId, clientId }, setPeek); // our own kept seat does not count
+		const check = () => socket.emit("room:peek", { room: roomId, clientId: clientId() }, setPeek); // our own kept seat does not count
 		check();
 		const id = setInterval(check, PEEK_INTERVAL);
 		return () => clearInterval(id);
