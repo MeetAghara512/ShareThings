@@ -79,6 +79,8 @@ io.on("connection", socket => {
 
   socket.on("room:join", async ({ room, name }, ack) => {
     if (typeof room !== "string" || !room || typeof ack !== "function") return;
+    // Every socket also sits in a room named after its own id; joining one of those would put a stranger "in the same room"
+    if (io.sockets.sockets.has(room)) return ack({ full: true });
     // Display name shown to the other member: plain text, at most 40 characters
     socket.data.name = (typeof name === "string" && name.trim().slice(0, 40).trim()) || "Guest";
     const members = io.sockets.adapter.rooms.get(room);
@@ -97,7 +99,7 @@ io.on("connection", socket => {
   // Without this, anyone with a room link could send an offer to the room and receive the camera of whoever waits there.
   const inSameRoom = to =>
     typeof to === "string" && to !== socket.id && io.sockets.sockets.has(to) &&
-    [...socket.rooms].some(room => room !== socket.id && io.sockets.adapter.rooms.get(room)?.has(to));
+    [...socket.rooms].some(room => !io.sockets.sockets.has(room) && io.sockets.adapter.rooms.get(room)?.has(to));
 
   socket.on("user:call", ({ to, offer }) => {
     if (inSameRoom(to)) io.to(to).emit("incomming:call", { from: socket.id, offer });
