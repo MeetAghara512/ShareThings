@@ -3,6 +3,7 @@ import { FaDownload, FaFileAlt, FaPaperPlane, FaPaperclip, FaTimes } from "react
 import { MdChatBubbleOutline } from "react-icons/md";
 import * as chat from "../Services/chat";
 import * as files from "../Services/files";
+import { useSocket } from "../useContext/SocketProvider";
 
 const useChat = () => useSyncExternalStore(chat.subscribe, chat.getState);
 // On wide screens the room makes space for the open panel, so it never covers the call controls
@@ -124,8 +125,14 @@ const ChatPanel = ({ darkMode, remoteName }) => {
 	const [text, setText] = useState("");
 	const listRef = useRef(null);
 	const fileRef = useRef(null);
+	const socket = useSocket();
 
 	useEffect(() => chat.setPeerName(remoteName), [remoteName]);
+	// Only a real departure gets a note; a reconnect also replaces the connection but the call goes on
+	useEffect(() => {
+		socket.on("user:left", chat.peerLeft);
+		return () => socket.off("user:left", chat.peerLeft);
+	}, [socket]);
 	useEffect(() => chat.clearChat, []); // leaving the room: nothing is kept
 	useEffect(() => void files.restore(), []); // files left unfinished by a reload or leaving the room continue
 
@@ -133,6 +140,14 @@ const ChatPanel = ({ darkMode, remoteName }) => {
 	useEffect(() => {
 		if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
 	}, [items.length, open]);
+	// ...also when the list gets smaller, e.g. the phone keyboard opening under it
+	useEffect(() => {
+		const list = listRef.current;
+		if (!list) return;
+		const observer = new ResizeObserver(() => { list.scrollTop = list.scrollHeight; });
+		observer.observe(list);
+		return () => observer.disconnect();
+	}, [open]);
 
 	if (!open) return null;
 
@@ -152,12 +167,13 @@ const ChatPanel = ({ darkMode, remoteName }) => {
 	const muted = darkMode ? "text-gray-400" : "text-gray-500";
 	const iconButton = `shrink-0 w-10 h-10 rounded-full flex items-center justify-center transition-colors disabled:opacity-40 disabled:cursor-not-allowed`;
 
+	// Below lg (phones, tablets): not over the call but under it, between the video and the control bar (see Room.jsx)
 	return (
 		<aside
 			aria-label="Chat"
 			onDragOver={e => e.preventDefault()}
 			onDrop={handleDrop}
-			className={`fixed z-40 inset-x-0 bottom-0 h-[75vh] lg:inset-x-auto lg:right-4 lg:bottom-20 lg:top-4 lg:h-auto lg:w-96 flex flex-col rounded-t-2xl lg:rounded-2xl shadow-2xl border ` +
+			className={`fixed z-40 inset-x-0 bottom-0 h-[75vh] max-lg:static max-lg:order-first max-lg:flex-1 max-lg:min-h-0 max-lg:h-auto max-lg:mx-2 sm:max-lg:mx-4 max-lg:mt-2 max-lg:rounded-2xl max-lg:shadow-none lg:inset-x-auto lg:right-4 lg:bottom-20 lg:top-4 lg:h-auto lg:w-96 flex flex-col rounded-t-2xl lg:rounded-2xl shadow-2xl border ` +
 				(darkMode ? "bg-gray-800 border-gray-700 text-gray-100" : "bg-white border-gray-200 text-gray-900")}
 		>
 			<header className={`flex items-center justify-between gap-2 px-4 py-3 border-b ${darkMode ? "border-gray-700" : "border-gray-200"}`}>

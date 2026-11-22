@@ -84,15 +84,18 @@ const attach = (chat, fileChannel) => {
 	chat.onclose = fileChannel.onclose = () => l === link && endLink();
 };
 
-// Connection gone (other person left, call ended or failed); unfinished files wait for them (files.jsx)
+// Connection gone (other person left, or a reconnect replaced it); unfinished files wait for them (files.jsx).
+// No note here: a reconnect also ends the old connection while the call goes on (see peerLeft)
 const endLink = () => {
 	const l = link;
 	link = null;
 	if (!l) return;
 	files.down?.(l);
-	if (l.ready) add({ kind: "note", text: "Call ended" });
 	set({ ready: false, filesOk: false });
 };
+
+// The other person really left the room (the server's user:left): noted under the conversation, if there is one
+export const peerLeft = () => state.items.length > 0 && add({ kind: "note", text: `${peerName || "The other person"} left the call` });
 
 peer.onDataChannels = attach;
 if (peer.chat) attach(peer.chat, peer.files);
