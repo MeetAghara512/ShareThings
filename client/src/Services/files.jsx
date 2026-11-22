@@ -110,9 +110,13 @@ const forget = part => records("readwrite", s => s.delete(part)).catch(() => {})
 // Only the very same file continues a partial one: same key, size, name and last-modified time
 const same = (x, msg) => x.key === msg.key && x.size === msg.size && x.name === cleanName(msg.name) && x.modified === msg.modified;
 
-// Private storage (OPFS) is written by a worker: only workers get the fast synchronous file handles
+// Private storage (OPFS) is written by a worker: only workers get the fast synchronous file handles.
+// Some browsers have it but refuse to use it (e.g. Firefox private windows): then small files wait in
+// memory, as before, and large ones cannot be received
 const hasDisk = !!navigator.storage?.getDirectory;
+const NO_STORAGE = "This browser can't store large files; try Chrome/Edge or a normal window";
 const folder = async () => (await navigator.storage.getDirectory()).getDirectoryHandle("incoming-files", { create: true });
+const storageWorks = async () => hasDisk && folder().then(() => true, () => false);
 const diskFile = async part => (await (await folder()).getFileHandle(part)).getFile();
 const discard = t => {
 	if (!t.part) return;
@@ -354,10 +358,11 @@ const onOffer = async msg => {
 	t.item = add({ kind: "file", mine: false, name: t.from, fileName: t.name, size, done: 0, status: "offered", eta: rate && size / rate, rough: msg.measured !== true });
 	bump();
 	const still = () => incoming.get(id) === t && t.status === "offered";
-	if (!hasDisk) {
+	if (!(await storageWorks())) {
+		if (!still()) return;
 		if (size <= ACCEPT_OVER) return take(Object.assign(t, { accepted: true }), memorySink);
 		send({ type: "decline", id, reason: "write" });
-		return drop(t, "failed", "This browser can only receive files up to 100 MB");
+		return drop(t, "failed", NO_STORAGE);
 	}
 	const record = (await records("readonly", s => s.getAll()).catch(() => [])).find(r => same(r, msg));
 	if (!still()) return;
@@ -377,9 +382,14 @@ const take = async (t, makeSink) => {
 	try {
 		t.sink = await makeSink();
 	} catch (e) {
+		// Private storage failed after all (e.g. the worker's file handle): small files wait in memory
+		if (t.size <= ACCEPT_OVER && makeSink !== memorySink) {
+			console.warn("Browser storage unavailable; keeping the file in memory", e);
+			return take(t, memorySink);
+		}
 		console.error("Could not get ready to save the file", e);
 		send({ type: "decline", id: t.id, reason: "write" });
-		return drop(t, "failed", "This browser could not save the file");
+		return drop(t, "failed", NO_STORAGE);
 	}
 	if (!incoming.has(t.id)) return t.sink.abort();
 	if (t.sink.release) keepRecord(t); // on disk: a reload can continue it
