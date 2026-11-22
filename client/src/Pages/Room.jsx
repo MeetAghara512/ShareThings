@@ -327,6 +327,9 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	// the call if the other person is still the one we talk to: the server kept our seat, or it restarted and
 	// forgot everyone. Otherwise the call is over on their side, so start fresh with whoever is in the room
 	const rejoinRoom = useCallback(() => {
+		// What we sent while offline waits in Socket.IO's buffer. The server only relays between people in the
+		// same room, so the rejoin has to reach it first
+		const queued = socket.sendBuffer.splice(0);
 		socket.emit("room:join", { room: roomId, name: myName, clientId, resume: true }, ({ full, peerId, peerName, peerSeat, peerHeld, resumed, server, iceServers }) => {
 			if (full) {
 				alert("This room is full.");
@@ -353,6 +356,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 			setRemoteSocketId(peerId);
 			setRemoteName(peerName);
 		});
+		socket.sendBuffer.push(...queued);
 	}, [socket, roomId, myName, navigate, resetCall]);
 
 	const handleReconnect = useCallback(() => (callStateRef.current === "active" ? rejoinRoom() : handleUserLeft()), [rejoinRoom, handleUserLeft]);
