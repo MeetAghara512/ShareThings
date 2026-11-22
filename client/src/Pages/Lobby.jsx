@@ -2,6 +2,14 @@ import React, { useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { FaMoon, FaSun } from "react-icons/fa";
 import { useAuth, GoogleSignInButton } from "../useContext/AuthProvider";
+import ServerStatus from "./ServerStatus";
+
+// A new room code like Google Meet's: 10 random letters as abc-defg-hij, 26^10 ≈ 141 trillion codes,
+// so live rooms cannot be found by guessing. getRandomValues also works on plain-HTTP test pages.
+const newRoomCode = () => {
+	const letters = [...crypto.getRandomValues(new Uint32Array(10))].map(n => String.fromCharCode(97 + (n % 26))).join("");
+	return `${letters.slice(0, 3)}-${letters.slice(3, 7)}-${letters.slice(7)}`;
+};
 
 const Lobby = ({ darkMode, toggleDarkMode }) => {
 	const { user, signOut } = useAuth();
@@ -12,7 +20,7 @@ const Lobby = ({ darkMode, toggleDarkMode }) => {
 		(e) => {
 			e.preventDefault();
 			// No room entered: create a new one with a random ID
-			const roomId = room.trim() || crypto.randomUUID().slice(0, 8);
+			const roomId = room.trim() || newRoomCode();
 			navigate(`/room/${encodeURIComponent(roomId)}`);
 		},
 		[room, navigate]
@@ -74,12 +82,12 @@ const Lobby = ({ darkMode, toggleDarkMode }) => {
 
 					<div className="space-y-2">
 						<label htmlFor="room" className="block text-sm font-medium">
-							Room ID <span className="opacity-60">(leave empty to create a new room)</span>
+							Room code <span className="opacity-60">(leave empty to create a new room)</span>
 						</label>
 						<input
 							type="text"
 							id="room"
-							placeholder="Enter room ID"
+							placeholder="abc-defg-hij"
 							value={room}
 							onChange={(e) => setRoom(e.target.value)}
 							className={`w-full px-4 py-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-indigo-400 transition-all duration-300 text-sm ` +
@@ -96,6 +104,7 @@ const Lobby = ({ darkMode, toggleDarkMode }) => {
 					>
 						{room.trim() ? "Join Room" : "Create Room"}
 					</button>
+					<ServerStatus />
 				</form>
 			</main>
 
