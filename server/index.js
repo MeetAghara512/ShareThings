@@ -7,6 +7,7 @@ const { Server } = require("socket.io");
 const { OAuth2Client } = require("google-auth-library");
 const { sendInvite } = require("./invite");
 const { getIceServers } = require("./turn");
+const { limitConnections, joinLimited, peekLimited } = require("./limits");
 
 const app = express();
 const server = http.createServer(app);
@@ -26,6 +27,9 @@ const io = new Server(server, {
     methods: ["GET", "POST"]
   }
 });
+
+// Too many new connections from one internet address are refused (see limits.js)
+io.use(limitConnections);
 
 const MAX_ROOM_SIZE = 2;
 // A dropped connection keeps its seat this long, so the same browser tab can come back to its call
@@ -98,6 +102,11 @@ function holdSeat(room, socket, reason) {
   return true;
 }
 
+// The tab still has a place in the room: a kept seat, or an older connection not yet noticed as dead.
+// Taking it back after a dropped connection is never refused or counted by the join limit
+const ownsSeat = (room, clientId) => !!clientId && (!!heldSeats.get(room)?.has(clientId) ||
+  [...(io.sockets.adapter.rooms.get(room) ?? [])].some(id => io.sockets.sockets.get(id)?.data.clientId === clientId));
+
 function releaseSeat(room, clientId) {
   const seats = heldSeats.get(room);
   clearTimeout(seats?.get(clientId)?.timer);
@@ -121,6 +130,7 @@ io.on("connection", socket => {
   // clientId: random per browser tab, so the tab gets its seat back after a dropped connection.
   // resume: the tab still has its call running and wants to keep it
   socket.on("room:join", async ({ room, name, clientId, resume }, ack) => {
+    if (!ownsSeat(room, validClientId(clientId)) && joinLimited(socket, ack)) return;
     if (typeof room !== "string" || !room || typeof ack !== "function") return;
     // Every socket also sits in a room named after its own id; joining one of those would put a stranger "in the same room"
     if (io.sockets.sockets.has(room)) return ack({ full: true });
@@ -177,6 +187,7 @@ io.on("connection", socket => {
   // Names of the people in a room, for the join screen. Does not join it.
   // A seat kept for this tab itself (its connection dropped, then it reloaded) is not counted
   socket.on("room:peek", ({ room, clientId }, ack) => {
+    if (peekLimited(socket, ack)) return;
     if (typeof room !== "string" || !room || typeof ack !== "function") return;
     const others = othersInRoom(room, socket, validClientId(clientId));
     ack({ names: others.map(o => o.name ?? "Guest"), full: others.length >= MAX_ROOM_SIZE });
