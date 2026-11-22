@@ -3,16 +3,16 @@ import { FaMoon, FaSun, FaDesktop, FaVideoSlash, FaMicrophoneSlash } from "react
 import peer from "../Services/peer";
 import recovery from "../Services/recovery";
 import clientId, { renewClientId } from "../Services/clientId";
-import { openDevices } from "../Services/devices";
+import { openDevices, openDevice, onGranted, permission, troubleOf } from "../Services/devices";
 import { useSocket } from "../useContext/SocketProvider";
 import { useNavigate, useParams } from "react-router-dom";
 import CallStatus from "./CallStatus";
 import Preview from "./Preview";
 import ChatPanel, { useChatOpen } from "./ChatPanel";
-import ControlBar, { MeetingCard } from "./ControlBar";
+import ControlBar, { DeviceHelp, MeetingCard } from "./ControlBar";
 
-// What the other side last told us about their camera, mic and shared screen
-const MEDIA_ON = { video: true, audio: true, screen: false };
+// What the other side last told us about their camera, mic and shared screen (has*: there is a device at all)
+const MEDIA_ON = { video: true, audio: true, screen: false, hasCamera: true, hasMic: true };
 // While the screen is shared the camera only fills a small tile, so the screen gets the bandwidth
 const CAMERA_WHILE_SHARING = { maxBitrate: 150000, scaleResolutionDownBy: 2 };
 const CONNECT_FAILED = "Could not connect. Reload the page to try again.";
@@ -42,6 +42,8 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	const [reconnecting, setReconnecting] = useState(false);
 	const [copied, setCopied] = useState(false);
 	const [infoOpen, setInfoOpen] = useState(true); // the "Your meeting is ready" card
+	const [trouble, setTrouble] = useState({}); // { audio, video }: why a device does not work (see devices.jsx)
+	const [help, setHelp] = useState(null); // the device whose fix is shown
 
 	// idle | calling (we sent the offer) | active. Like Google Meet there is no ringing:
 	// once both people are in the room the call connects on its own
@@ -59,6 +61,8 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	const connectTimerRef = useRef(null);
 	const remoteSeatRef = useRef(null); // the other person's seat: the same when their connection drops and comes back
 	const serverRef = useRef(null); // which run of the server we joined, to notice a restart
+	const troubleRef = useRef(trouble);
+	troubleRef.current = trouble;
 
 	const setCallState = useCallback(state => {
 		callStateRef.current = state;
@@ -122,6 +126,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		setMyStream(stream);
 		setCameraOff(prefs.cameraOff);
 		setMuted(prefs.muted);
+		setTrouble(prefs.trouble ?? {});
 		setJoined(true);
 	};
 
@@ -138,10 +143,12 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		peer.onIceState = state => setReconnecting(state !== "connected" && state !== "completed"); // incl. during an ICE restart
 	}, [socket, remoteSocketId]);
 
-	// Tell the other side whether our camera and mic are on and whether we share our screen
+	// Tell the other side whether we have a camera and a mic, whether they are on and whether we share our screen
+	const hasCamera = !!myStream?.getVideoTracks().length;
+	const hasMic = !!myStream?.getAudioTracks().length;
 	useEffect(() => {
-		if (callStart && remoteSocketId) socket.emit("media:state", { to: remoteSocketId, video: !cameraOff, audio: !muted, screen: isScreen });
-	}, [socket, remoteSocketId, callStart, cameraOff, muted, isScreen]);
+		if (callStart && remoteSocketId) socket.emit("media:state", { to: remoteSocketId, video: hasCamera && !cameraOff, audio: hasMic && !muted, screen: isScreen, hasCamera, hasMic });
+	}, [socket, remoteSocketId, callStart, cameraOff, muted, isScreen, hasCamera, hasMic]);
 
 	// Shrink the camera while sharing and restore it afterwards (also on a call that starts mid-share)
 	useEffect(() => {
@@ -202,9 +209,19 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 			setMyStream(stream);
 		}
 		if (tracksAddedRef.current !== connection) {
-			stream.getTracks().forEach(t => connection.addTrack(t, stream));
 			tracksAddedRef.current = connection;
-			// Only after addTrack, which would put the camera in a free lane. A share already running goes on it
+			// Always a mic lane and a camera lane, even without the device, so one can be turned on later with
+			// no new offer. The offering side makes them (in this order); the answering side has them from the offer
+			const answering = !!connection.remoteDescription;
+			for (const kind of ["audio", "video"]) {
+				const track = stream.getTracks().find(t => t.kind === kind) ?? null;
+				const lane = answering ? peer.lane(kind) : connection.addTransceiver(track ?? kind, { direction: "sendrecv", streams: [stream] });
+				if (!answering || !lane) continue;
+				lane.direction = "sendrecv";
+				lane.sender.setStreams?.(stream);
+				if (track) await lane.sender.replaceTrack(track);
+			}
+			// After the mic and camera lanes, so the screen's is the second video lane. A share already running goes on it
 			const slot = peer.screenSlot(true);
 			if (slot && screenTrackRef.current) await slot.sender.replaceTrack(screenTrackRef.current);
 		}
@@ -276,8 +293,8 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		peer.peer.addIceCandidate(candidate).catch(e => console.error("ICE candidate failed", e));
 	}, []);
 
-	const handleMediaState = useCallback(({ video, audio, screen }) => {
-		setRemoteMedia({ video: video !== false, audio: audio !== false, screen: screen === true });
+	const handleMediaState = useCallback(({ video, audio, screen, hasCamera, hasMic }) => {
+		setRemoteMedia({ video: video !== false, audio: audio !== false, screen: screen === true, hasCamera: hasCamera !== false, hasMic: hasMic !== false });
 		if (screen !== true) setSwapped(false); // their next share starts with the screen big again
 	}, []);
 
@@ -432,6 +449,48 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		setIsScreen(false);
 	};
 
+	// A red mic or camera button: ask again where the browser still can (the click allows the prompt), else
+	// show the fix. A device that starts goes into its lane with replaceTrack: no new offer
+	const fixDevice = useCallback(async kind => {
+		if (troubleRef.current[kind] === "system" || await permission(kind) === "denied") return setHelp(kind);
+		try {
+			const track = await openDevice(kind, prefsRef.current[kind === "video" ? "videoId" : "audioId"]);
+			const current = myStreamRef.current;
+			if (!current) return track.stop(); // left the room meanwhile
+			const stream = new MediaStream([...current.getTracks(), track]);
+			myStreamRef.current = stream;
+			setMyStream(stream);
+			await peer.lane(kind)?.sender.replaceTrack(track); // none while waiting alone: setupMedia adds it to the next call
+			if (kind === "video") setCameraOff(false);
+			else setMuted(false);
+			setTrouble(t => ({ ...t, [kind]: null }));
+			setHelp(null);
+		} catch (e) {
+			setTrouble(t => ({ ...t, [kind]: troubleOf(e) }));
+			setHelp(kind);
+		}
+	}, []);
+
+	// A device unplugged or blocked during the call: its lane goes quiet and its button turns red
+	useEffect(() => {
+		myStream?.getTracks().forEach(track => {
+			track.onended = () => {
+				const stream = new MediaStream(myStreamRef.current?.getTracks().filter(t => t !== track) ?? []);
+				myStreamRef.current = stream;
+				setMyStream(stream);
+				peer.lane(track.kind)?.sender.replaceTrack(null).catch(() => {});
+				setTrouble(t => ({ ...t, [track.kind]: "missing" }));
+			};
+		});
+	}, [myStream]);
+
+	// Allowed in the address bar during the call: the device starts by itself
+	useEffect(() => {
+		if (!joined) return;
+		const stops = ["audio", "video"].map(kind => onGranted(kind, () => troubleRef.current[kind] && fixDevice(kind)));
+		return () => stops.forEach(stop => stop());
+	}, [joined, fixDevice]);
+
 	// Toggle mic on/off
 	const handleToggleMic = () => {
 		if (!myStreamRef.current) return;
@@ -453,6 +512,12 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	const bigStream = remoteSharing && !swapped ? remoteScreen : remoteStream;
 	const smallStream = bigStream === remoteStream ? remoteScreen : remoteStream;
 	const alone = !remoteSocketId;
+	// A device with no track is shown as missing, even if the join screen never said why
+	const deviceTrouble = { audio: hasMic ? null : trouble.audio || "missing", video: hasCamera ? null : trouble.video || "missing" };
+	// A first letter in a circle, for someone without a camera
+	const avatar = (name, size) => (
+		<span className={`${size} rounded-full bg-indigo-600 text-white font-semibold flex items-center justify-center uppercase`}>{(name || "?").trim().charAt(0)}</span>
+	);
 
 	// The meeting card shows while you wait alone and hides when someone joins; the info button toggles it
 	useEffect(() => setInfoOpen(!remoteSocketId), [remoteSocketId]);
@@ -505,13 +570,13 @@ return (
 						)}
 						{showRemote && !remoteMedia.video && bigStream === remoteStream && (
 							<div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-zinc-800 text-gray-300">
-								<FaVideoSlash size={40} />
-								<span>Camera off</span>
+								{remoteMedia.hasCamera ? <FaVideoSlash size={40} /> : avatar(remoteName, "w-24 h-24 text-4xl")}
+								<span>{remoteMedia.hasCamera ? "Camera off" : `${remoteName || "They"} has no camera`}</span>
 							</div>
 						)}
 						{showRemote && (remoteName || !remoteMedia.audio) && (
 							<span className="absolute bottom-4 left-4 max-w-[calc(100%-12rem)] flex items-center gap-1.5 px-2 py-1 rounded bg-black/60 text-white text-sm">
-								{!remoteMedia.audio && <FaMicrophoneSlash className="shrink-0 text-red-400" title="Muted" />}
+								{!remoteMedia.audio && <FaMicrophoneSlash className="shrink-0 text-red-400" title={remoteMedia.hasMic ? "Muted" : "No microphone"} />}
 								<span className="truncate">{remoteName}</span>
 							</span>
 						)}
@@ -532,7 +597,7 @@ return (
 								/>
 								{smallStream === remoteStream && !remoteMedia.video && (
 									<div className="absolute inset-0 flex items-center justify-center bg-zinc-800 text-gray-300">
-										<FaVideoSlash size={24} />
+										{remoteMedia.hasCamera ? <FaVideoSlash size={24} /> : avatar(remoteName, "w-12 h-12 text-xl")}
 									</div>
 								)}
 							</button>
@@ -555,13 +620,13 @@ return (
 									className="w-full h-full object-cover -scale-x-100"
 									ref={(v) => v && v.srcObject !== myStream && (v.srcObject = myStream)}
 								/>
-								{cameraOff && (
+								{(cameraOff || !hasCamera) && (
 									<div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-zinc-800 text-gray-300">
-										<FaVideoSlash size={alone ? 40 : 24} />
-										{alone && <span>Your camera is off</span>}
+										{hasCamera ? <FaVideoSlash size={alone ? 40 : 24} /> : avatar(myName, alone ? "w-24 h-24 text-4xl" : "w-10 h-10 text-lg")}
+										{alone && <span>{hasCamera ? "Your camera is off" : "You (no camera)"}</span>}
 									</div>
 								)}
-								{!alone && <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-black/60 text-white text-xs">You</span>}
+								{!alone && <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-black/60 text-white text-xs">{hasCamera ? "You" : "You (no camera)"}</span>}
 							</div>
 						)}
 						{!wide && status && (
@@ -571,6 +636,9 @@ return (
 							<div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 max-w-[calc(100%-2rem)] px-4 py-2 rounded-full bg-indigo-600 text-white text-sm font-semibold shadow flex items-center gap-2 whitespace-nowrap">
 								<FaDesktop className="shrink-0" /> You are sharing your screen
 							</div>
+						)}
+						{help && deviceTrouble[help] && (
+							<DeviceHelp kind={help} trouble={deviceTrouble[help]} darkMode={darkMode} onClose={() => setHelp(null)} className="absolute z-30 bottom-3 left-1/2 -translate-x-1/2 w-[min(24rem,calc(100%-1.5rem))]" />
 						)}
 						{infoOpen && (
 							<MeetingCard darkMode={darkMode} roomId={roomId} alone={alone} copied={copied} onCopy={handleCopyLink} onClose={() => setInfoOpen(false)} />
@@ -583,10 +651,11 @@ return (
 					status={wide && status}
 					muted={muted}
 					cameraOff={cameraOff}
+					trouble={deviceTrouble}
 					isScreen={isScreen}
 					infoOpen={infoOpen}
-					onToggleMic={handleToggleMic}
-					onToggleCamera={handleToggleCamera}
+					onToggleMic={deviceTrouble.audio ? () => fixDevice("audio") : handleToggleMic}
+					onToggleCamera={deviceTrouble.video ? () => fixDevice("video") : handleToggleCamera}
 					onToggleShare={isScreen ? stopShare : startShare}
 					onToggleInfo={() => setInfoOpen(!infoOpen)}
 					onToggleDarkMode={toggleDarkMode}

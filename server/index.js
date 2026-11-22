@@ -187,9 +187,9 @@ io.on("connection", socket => {
   socket.on("ice:candidate", ({ to, candidate }) => {
     if (inSameRoom(to)) io.to(to).emit("ice:candidate", { from: socket.id, candidate });
   });
-  // Camera / mic on or off and screen shared or not, so the other side can show a placeholder, a muted icon and the screen
-  socket.on("media:state", ({ to, video, audio, screen }) => {
-    if (inSameRoom(to)) io.to(to).emit("media:state", { from: socket.id, video: video !== false, audio: audio !== false, screen: screen === true });
+  // Camera / mic on or off (or missing) and screen shared or not, so the other side can show a placeholder, a muted icon and the screen
+  socket.on("media:state", ({ to, video, audio, screen, hasCamera, hasMic }) => {
+    if (inSameRoom(to)) io.to(to).emit("media:state", { from: socket.id, video: video !== false, audio: audio !== false, screen: screen === true, hasCamera: hasCamera !== false, hasMic: hasMic !== false });
   });
 
   // Email the room link to a guest; see invite.js for the rules

@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { FaVideo, FaVideoSlash, FaMicrophone, FaMicrophoneSlash, FaRedo } from "react-icons/fa";
-import { openDevices } from "../Services/devices";
+import { openDevice, openEach, onGranted, permission, troubleOf, troubleText } from "../Services/devices";
 import clientId from "../Services/clientId";
+import { DeviceHelp, TroubleMark } from "./ControlBar";
 import { useSocket, useSocketStatus } from "../useContext/SocketProvider";
 import { useAuth } from "../useContext/AuthProvider";
 import ServerStatus from "./ServerStatus";
@@ -18,22 +19,6 @@ const whoIsHere = names =>
 	names.length === 1 ? `${names[0]} is in this call` :
 	`${names.slice(0, -1).join(", ")} and ${names.at(-1)} are in this call`;
 
-const describeError = e => {
-	switch (e?.name) {
-		case "NotAllowedError":
-		case "SecurityError":
-			return "Camera and microphone access is blocked. Allow it from the icon in your browser's address bar, then press Retry.";
-		case "NotFoundError":
-		case "OverconstrainedError":
-			return "No camera or microphone was found. Connect one, then press Retry.";
-		case "NotReadableError":
-		case "AbortError":
-			return "Your camera or microphone is busy or not working. Close other apps using it, or pick another device.";
-		default:
-			return "Could not start your camera and microphone. Press Retry.";
-	}
-};
-
 // Check camera and mic before joining. Nothing is sent to the room until Join.
 const Preview = ({ darkMode, roomId, onJoin }) => {
 	const socket = useSocket();
@@ -41,7 +26,8 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 	const [joining, setJoining] = useState(false); // Join now pressed while the server is still waking up
 	const { user } = useAuth();
 	const [stream, setStream] = useState(null);
-	const [error, setError] = useState(null);
+	const [trouble, setTrouble] = useState({}); // { audio, video }: why a device does not work
+	const [help, setHelp] = useState(null); // the device whose fix is shown
 	const [loading, setLoading] = useState(true);
 	const [slow, setSlow] = useState(false); // still waiting for the permission prompt
 	const [devices, setDevices] = useState({ video: [], audio: [] });
@@ -53,6 +39,8 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 	const [peek, setPeek] = useState(null); // { names, full } once known
 
 	const streamRef = useRef(null);
+	const troubleRef = useRef(trouble);
+	troubleRef.current = trouble;
 	const requestRef = useRef(0); // only the latest camera request counts
 	const handedOverRef = useRef(false);
 	const meterRef = useRef(null);
@@ -72,23 +60,20 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 		streamRef.current?.getTracks().forEach(t => t.stop());
 		streamRef.current = null;
 		setStream(null);
-		setError(null);
+		setTrouble({});
+		setHelp(null);
 		setLoading(true);
-		try {
-			if (!navigator.mediaDevices) throw new DOMException("Needs a secure page", "SecurityError");
-			const s = await openDevices(video, audio);
-			// Switched device, retried or left the page meanwhile: drop this one
-			if (request !== requestRef.current) return s.getTracks().forEach(t => t.stop());
-			streamRef.current = s;
-			setStream(s);
-			// Show the devices actually in use (a saved one that is gone falls back to the default)
-			setVideoId(s.getVideoTracks()[0]?.getSettings().deviceId || "");
-			setAudioId(s.getAudioTracks()[0]?.getSettings().deviceId || "");
-		} catch (e) {
-			if (request !== requestRef.current) return;
-			console.error("Camera preview failed", e);
-			setError(describeError(e));
-		}
+		// Mic and camera each on their own terms: a blocked camera does not stop the mic (an insecure page has neither)
+		const { stream: s, trouble } = navigator.mediaDevices ? await openEach(video, audio) : { stream: new MediaStream(), trouble: { audio: "blocked", video: "blocked" } };
+		// Switched device, retried or left the page meanwhile: drop this one
+		if (request !== requestRef.current) return s.getTracks().forEach(t => t.stop());
+		streamRef.current = s;
+		setStream(s);
+		setTrouble(trouble);
+		// Show the devices actually in use (a saved one that is gone falls back to the default)
+		const [camera] = s.getVideoTracks(), [mic] = s.getAudioTracks();
+		if (camera) setVideoId(camera.getSettings().deviceId || "");
+		if (mic) setAudioId(mic.getSettings().deviceId || "");
 		setLoading(false);
 		refreshDevices();
 	}, [refreshDevices]);
@@ -100,6 +85,32 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 			if (!handedOverRef.current) streamRef.current?.getTracks().forEach(t => t.stop());
 		};
 	}, [start]);
+
+	// A red button: ask again where the browser still can (the click allows the prompt), else show the fix
+	const fixDevice = useCallback(async kind => {
+		const request = requestRef.current;
+		if (troubleRef.current[kind] === "system" || await permission(kind) === "denied") return setHelp(kind);
+		try {
+			const track = await openDevice(kind, kind === "video" ? videoId : audioId);
+			if (request !== requestRef.current) return track.stop();
+			const s = new MediaStream([...(streamRef.current?.getTracks() ?? []), track]);
+			streamRef.current = s;
+			setStream(s);
+			setTrouble(t => ({ ...t, [kind]: null }));
+			setHelp(null);
+			refreshDevices();
+		} catch (e) {
+			if (request !== requestRef.current) return;
+			setTrouble(t => ({ ...t, [kind]: troubleOf(e) }));
+			setHelp(kind);
+		}
+	}, [videoId, audioId, refreshDevices]);
+
+	// Allowed in the address bar meanwhile: the device starts by itself
+	useEffect(() => {
+		const stops = ["audio", "video"].map(kind => onGranted(kind, () => troubleRef.current[kind] && fixDevice(kind)));
+		return () => stops.forEach(stop => stop());
+	}, [fixDevice]);
 
 	useEffect(() => {
 		const md = navigator.mediaDevices;
@@ -175,7 +186,9 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 	};
 
 	const displayName = name.trim();
-	const canJoin = stream && displayName && !peek?.full;
+	// Joins with whatever works, even nothing: then you watch and listen
+	const canJoin = displayName && !peek?.full;
+	const without = ["video", "audio"].filter(kind => trouble[kind]);
 
 	const handleJoin = e => {
 		e?.preventDefault();
@@ -186,7 +199,7 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 		localStorage.setItem(MIC_KEY, audioId);
 		localStorage.setItem(NAME_KEY, displayName);
 		handedOverRef.current = true;
-		onJoin(streamRef.current, { videoId, audioId, cameraOff, muted, name: displayName });
+		onJoin(streamRef.current ?? new MediaStream(), { videoId, audioId, cameraOff, muted, name: displayName, trouble });
 	};
 
 	useEffect(() => {
@@ -205,7 +218,7 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 		<div className="w-full max-w-4xl flex flex-col md:flex-row gap-6 items-center" onPointerDown={() => audioCtxRef.current?.resume()}>
 			<div className="relative w-full md:w-3/5 aspect-video bg-black rounded-2xl overflow-hidden shadow-lg border-4 border-gray-700">
 				{/* Shown like a mirror; the other person gets the true picture */}
-				{stream && (
+				{stream?.getVideoTracks().length > 0 && (
 					<video
 						autoPlay
 						muted
@@ -214,40 +227,16 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 						ref={(v) => v && v.srcObject !== stream && (v.srcObject = stream)}
 					/>
 				)}
-				{stream && cameraOff && (
+				{!loading && (trouble.video || cameraOff) && (
 					<div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-zinc-800 text-gray-300">
 						<FaVideoSlash size={40} />
-						<span>Camera is off</span>
+						<span>{trouble.video ? troubleText("video", trouble.video) : "Camera is off"}</span>
 					</div>
 				)}
-				{stream && (
-					<div className="absolute bottom-4 inset-x-0 flex justify-center gap-4">
-						<button
-							type="button"
-							onClick={() => setMuted(!muted)}
-							aria-pressed={muted}
-							aria-label={muted ? "Turn on microphone" : "Turn off microphone"}
-							title={muted ? "Turn on microphone" : "Turn off microphone"}
-							className={toggleClass(muted)}
-						>
-							{muted ? <FaMicrophoneSlash size={18} /> : <FaMicrophone size={18} />}
-						</button>
-						<button
-							type="button"
-							onClick={() => setCameraOff(!cameraOff)}
-							aria-pressed={cameraOff}
-							aria-label={cameraOff ? "Turn on camera" : "Turn off camera"}
-							title={cameraOff ? "Turn on camera" : "Turn off camera"}
-							className={toggleClass(cameraOff)}
-						>
-							{cameraOff ? <FaVideoSlash size={18} /> : <FaVideo size={18} />}
-						</button>
-					</div>
-				)}
-				{!stream && (
+				{loading && (
 					<div className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-6 text-center text-white">
-						{error ? <p className="text-red-300">{error}</p> : <p className="animate-pulse">Starting camera and microphone...</p>}
-						{(error || slow) && (
+						<p className="animate-pulse">Starting camera and microphone...</p>
+						{slow && (
 							<button
 								onClick={() => start(videoId, audioId)}
 								className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-full flex items-center gap-2 shadow-sm transition-colors"
@@ -256,6 +245,34 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 							</button>
 						)}
 					</div>
+				)}
+				{/* Always there, like Google Meet: red with a "!" when the device is blocked or missing */}
+				<div className="absolute bottom-4 inset-x-0 flex justify-center gap-4">
+					<button
+						type="button"
+						onClick={() => trouble.audio ? fixDevice("audio") : setMuted(!muted)}
+						aria-pressed={trouble.audio ? undefined : muted}
+						aria-label={trouble.audio ? troubleText("audio", trouble.audio) : muted ? "Turn on microphone" : "Turn off microphone"}
+						title={trouble.audio ? troubleText("audio", trouble.audio) : muted ? "Turn on microphone" : "Turn off microphone"}
+						className={`relative ${toggleClass(muted || trouble.audio)}`}
+					>
+						{muted || trouble.audio ? <FaMicrophoneSlash size={18} /> : <FaMicrophone size={18} />}
+						{trouble.audio && <TroubleMark />}
+					</button>
+					<button
+						type="button"
+						onClick={() => trouble.video ? fixDevice("video") : setCameraOff(!cameraOff)}
+						aria-pressed={trouble.video ? undefined : cameraOff}
+						aria-label={trouble.video ? troubleText("video", trouble.video) : cameraOff ? "Turn on camera" : "Turn off camera"}
+						title={trouble.video ? troubleText("video", trouble.video) : cameraOff ? "Turn on camera" : "Turn off camera"}
+						className={`relative ${toggleClass(cameraOff || trouble.video)}`}
+					>
+						{cameraOff || trouble.video ? <FaVideoSlash size={18} /> : <FaVideo size={18} />}
+						{trouble.video && <TroubleMark />}
+					</button>
+				</div>
+				{help && trouble[help] && (
+					<DeviceHelp kind={help} trouble={trouble[help]} darkMode={darkMode} onClose={() => setHelp(null)} className="absolute top-3 inset-x-3" />
 				)}
 			</div>
 
@@ -310,6 +327,11 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 					</label>
 				)}
 
+				{without.length > 0 && (
+					<p className="text-sm text-amber-500">
+						{without.length === 2 ? "No camera or microphone: you will join to watch and listen" : `${troubleText(without[0], trouble[without[0]])} — you will join without ${without[0] === "video" ? "video" : "sound"}`}
+					</p>
+				)}
 				<button
 					type="submit"
 					disabled={!canJoin}
