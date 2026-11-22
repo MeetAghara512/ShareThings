@@ -156,7 +156,8 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 
 	// Who is already in the room, kept fresh while this screen is open
 	useEffect(() => {
-		const check = () => socket.emit("room:peek", { room: roomId }, setPeek);
+		// Over the server's limit the answer is { limited: true }: keep showing the last one
+		const check = () => socket.emit("room:peek", { room: roomId }, answer => !answer?.limited && setPeek(answer));
 		check();
 		const id = setInterval(check, PEEK_INTERVAL);
 		return () => clearInterval(id);

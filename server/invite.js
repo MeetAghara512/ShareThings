@@ -4,6 +4,7 @@
 const crypto = require("crypto");
 const { OAuth2Client } = require("google-auth-library");
 const MailComposer = require("nodemailer/lib/mail-composer");
+const { clientAddress } = require("./limits");
 
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
@@ -135,11 +136,9 @@ async function sendInvite(socket, { to, room, when }, allowedOrigins, googleClie
 
     if (!process.env.GMAIL_CLIENT_SECRET || !process.env.GMAIL_REFRESH_TOKEN) return { error: "Email invites are not set up on this server. Copy the invite link above and send it yourself." };
 
-    // cf-connecting-ip is set by the host's edge and cannot be forged through it; x-forwarded-for can be
-    const { "cf-connecting-ip": edgeIp, "x-forwarded-for": forwardedFor } = socket.handshake.headers;
     const keys = {
       sender: user.email.toLowerCase(),
-      ip: edgeIp || (typeof forwardedFor === "string" && forwardedFor.split(",")[0].trim()) || socket.handshake.address,
+      ip: clientAddress(socket),
       recipient: mailboxKey(to)
     };
     const now = Date.now();

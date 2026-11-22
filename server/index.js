@@ -5,6 +5,7 @@ const http = require("http");
 const { Server } = require("socket.io");
 const { OAuth2Client } = require("google-auth-library");
 const { sendInvite } = require("./invite");
+const { limitConnections, joinLimited, peekLimited } = require("./limits");
 
 const app = express();
 const server = http.createServer(app);
@@ -24,6 +25,9 @@ const io = new Server(server, {
     methods: ["GET", "POST"]
   }
 });
+
+// Too many new connections from one internet address are refused (see limits.js)
+io.use(limitConnections);
 
 const MAX_ROOM_SIZE = 2;
 
@@ -81,6 +85,7 @@ io.on("connection", socket => {
   });
 
   socket.on("room:join", async ({ room, name }, ack) => {
+    if (joinLimited(socket, ack)) return;
     if (typeof room !== "string" || !room || typeof ack !== "function") return;
     // Every socket also sits in a room named after its own id; joining one of those would put a stranger "in the same room"
     if (io.sockets.sockets.has(room)) return ack({ full: true });
@@ -126,6 +131,7 @@ io.on("connection", socket => {
 
   // Names of the people in a room, for the join screen. Does not join it.
   socket.on("room:peek", ({ room }, ack) => {
+    if (peekLimited(socket, ack)) return;
     if (typeof room !== "string" || !room || typeof ack !== "function") return;
     // Every socket also sits in a room named after its own id; never report on those
     const ids = io.sockets.sockets.has(room) ? [] : [...(io.sockets.adapter.rooms.get(room) ?? [])];

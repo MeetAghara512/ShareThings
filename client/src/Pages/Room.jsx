@@ -79,9 +79,9 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 
 	// Join the room; the server replies with who is already there and the ICE servers to use
 	const joinRoom = useCallback(() => {
-		socket.emit("room:join", { room: roomId, name: myName }, ({ full, peerId, peerName, iceServers }) => {
+		socket.emit("room:join", { room: roomId, name: myName }, ({ full, error, peerId, peerName, iceServers }) => {
 			if (full) {
-				alert("This room is full.");
+				alert(error || "This room is full."); // error: too many attempts from this internet address
 				return navigate("/");
 			}
 			iceServersRef.current = iceServers;
