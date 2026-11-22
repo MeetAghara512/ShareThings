@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { FaVideo, FaVideoSlash, FaMicrophone, FaMicrophoneSlash, FaRedo } from "react-icons/fa";
 import { openDevices } from "../Services/devices";
-import { useSocket } from "../useContext/SocketProvider";
+import { useSocket, useSocketStatus } from "../useContext/SocketProvider";
 import { useAuth } from "../useContext/AuthProvider";
+import ServerStatus from "./ServerStatus";
 
 // Devices picked and name used on this browser
 const CAMERA_KEY = "sharethings.camera";
@@ -35,6 +36,8 @@ const describeError = e => {
 // Check camera and mic before joining. Nothing is sent to the room until Join.
 const Preview = ({ darkMode, roomId, onJoin }) => {
 	const socket = useSocket();
+	const { status } = useSocketStatus();
+	const [joining, setJoining] = useState(false); // Join now pressed while the server is still waking up
 	const { user } = useAuth();
 	const [stream, setStream] = useState(null);
 	const [error, setError] = useState(null);
@@ -174,14 +177,20 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 	const canJoin = stream && displayName && !peek?.full;
 
 	const handleJoin = e => {
-		e.preventDefault();
+		e?.preventDefault();
 		if (!canJoin) return;
+		// The server may still be waking up: join as soon as it answers (the button says Joining…)
+		if (status !== "connected") return setJoining(true);
 		localStorage.setItem(CAMERA_KEY, videoId);
 		localStorage.setItem(MIC_KEY, audioId);
 		localStorage.setItem(NAME_KEY, displayName);
 		handedOverRef.current = true;
 		onJoin(streamRef.current, { videoId, audioId, cameraOff, muted, name: displayName });
 	};
+
+	useEffect(() => {
+		if (joining && status === "connected") handleJoin();
+	}, [joining, status]);
 
 	// Round on/off buttons on the preview, red when off (like Google Meet)
 	const toggleClass = off => `w-12 h-12 rounded-full flex items-center justify-center text-white shadow-md transition-colors ` +
@@ -252,6 +261,7 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 			<form onSubmit={handleJoin} className={`w-full md:w-2/5 p-6 rounded-2xl shadow-lg space-y-4 ${darkMode ? "bg-gray-800 text-gray-100" : "bg-white text-gray-900"}`}>
 				<div className="space-y-1">
 					<h3 className="text-xl font-semibold">Ready to join?</h3>
+					<ServerStatus />
 					{peek && (
 						<p className={`text-sm font-medium ${peek.full ? "text-red-500" : "text-indigo-400"}`}>
 							{peek.full ? `${whoIsHere(peek.names)}. This room is full.` : whoIsHere(peek.names)}
@@ -304,7 +314,7 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 					disabled={!canJoin}
 					className="w-full py-3 rounded-lg bg-indigo-600 text-white font-semibold transition-transform hover:bg-indigo-700 hover:-translate-y-1 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:bg-indigo-600"
 				>
-					Join now
+					{joining ? "Joining…" : "Join now"}
 				</button>
 			</form>
 		</div>

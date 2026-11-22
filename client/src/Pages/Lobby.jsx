@@ -2,6 +2,7 @@ import React, { useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { FaMoon, FaSun } from "react-icons/fa";
 import { useAuth, GoogleSignInButton } from "../useContext/AuthProvider";
+import ServerStatus from "./ServerStatus";
 
 const Lobby = ({ darkMode, toggleDarkMode }) => {
 	const { user, signOut } = useAuth();
@@ -96,6 +97,7 @@ const Lobby = ({ darkMode, toggleDarkMode }) => {
 					>
 						{room.trim() ? "Join Room" : "Create Room"}
 					</button>
+					<ServerStatus />
 				</form>
 			</main>
 
