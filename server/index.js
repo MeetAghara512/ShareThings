@@ -34,6 +34,11 @@ const heldSeats = new Map();
 // New on every start, so a client can tell "the server restarted and forgot all seats" from "my seat was given up"
 const SERVER_ID = randomBytes(8).toString("hex");
 
+// Bump when client and server must change together (same number as PROTOCOL_VERSION in
+// client/src/Pages/VersionBanner.jsx). Every new connection is told it, so a tab opened before a deploy
+// can offer a reload
+const PROTOCOL_VERSION = 1;
+
 // Public identifier of the Google OAuth client (not a secret). Must match GOOGLE_CLIENT_ID in client/src/useContext/AuthProvider.jsx
 const GOOGLE_CLIENT_ID = "123263407226-ltqv9qfv6s58ocr5nvgk2vggoa0addhf.apps.googleusercontent.com";
 const googleClient = new OAuth2Client();
@@ -130,6 +135,7 @@ function releaseSeat(room, clientId) {
 }
 
 io.on("connection", socket => {
+  socket.emit("app:version", { version: PROTOCOL_VERSION });
 
   // Every event carries an object payload; drop anything else before a handler can throw on it
   socket.use(([, data], next) => {
