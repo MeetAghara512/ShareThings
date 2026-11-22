@@ -79,6 +79,8 @@ io.on("connection", socket => {
 
   socket.on("room:join", async ({ room, name }, ack) => {
     if (typeof room !== "string" || !room || typeof ack !== "function") return;
+    // Every socket also sits in a room named after its own id; joining one of those would put a stranger "in the same room"
+    if (io.sockets.sockets.has(room)) return ack({ full: true });
     // Display name shown to the other member: plain text, at most 40 characters
     socket.data.name = (typeof name === "string" && name.trim().slice(0, 40).trim()) || "Guest";
     const members = io.sockets.adapter.rooms.get(room);
@@ -93,19 +95,25 @@ io.on("connection", socket => {
     socket.to(room).emit("user:joined", { id: socket.id, name: socket.data.name });
   });
 
-  socket.on("user:call", ({ to, offer }) =>
-    io.to(to).emit("incomming:call", { from: socket.id, offer })
-  );
-  socket.on("call:accepted", ({ to, ans }) =>
-    io.to(to).emit("call:accepted", { from: socket.id, ans })
-  );
-  socket.on("ice:candidate", ({ to, candidate }) =>
-    io.to(to).emit("ice:candidate", { from: socket.id, candidate })
-  );
+  // Call signaling only ever goes to the other person in the same room: never to a room name, never to a stranger.
+  // Without this, anyone with a room link could send an offer to the room and receive the camera of whoever waits there.
+  const inSameRoom = to =>
+    typeof to === "string" && to !== socket.id && io.sockets.sockets.has(to) &&
+    [...socket.rooms].some(room => !io.sockets.sockets.has(room) && io.sockets.adapter.rooms.get(room)?.has(to));
+
+  socket.on("user:call", ({ to, offer }) => {
+    if (inSameRoom(to)) io.to(to).emit("incomming:call", { from: socket.id, offer });
+  });
+  socket.on("call:accepted", ({ to, ans }) => {
+    if (inSameRoom(to)) io.to(to).emit("call:accepted", { from: socket.id, ans });
+  });
+  socket.on("ice:candidate", ({ to, candidate }) => {
+    if (inSameRoom(to)) io.to(to).emit("ice:candidate", { from: socket.id, candidate });
+  });
   // Camera / mic on or off and screen shared or not, so the other side can show a placeholder, a muted icon and the screen
-  socket.on("media:state", ({ to, video, audio, screen }) =>
-    io.to(to).emit("media:state", { from: socket.id, video: video !== false, audio: audio !== false, screen: screen === true })
-  );
+  socket.on("media:state", ({ to, video, audio, screen }) => {
+    if (inSameRoom(to)) io.to(to).emit("media:state", { from: socket.id, video: video !== false, audio: audio !== false, screen: screen === true });
+  });
 
   // Email the room link to a guest; see invite.js for the rules
   socket.on("invite:send", async (payload, ack) => {
