@@ -554,8 +554,9 @@ return (
 			</>
 		) : (
 			<>
-				{/* The stage fills the screen above the control bar: the page itself never scrolls */}
-				<main className={`flex-1 min-h-0 px-2 pt-2 sm:px-4 sm:pt-4 ${chatOpen ? "lg:pr-[26rem]" : ""}`}>
+				{/* The stage fills the screen above the control bar: the page itself never scrolls. On phones with the
+				    chat open it keeps the top 40% (the chat sits under it, see ChatPanel); dvh follows the keyboard */}
+				<main className={`flex-1 min-h-0 px-2 pt-2 sm:px-4 sm:pt-4 ${chatOpen ? "lg:pr-[26rem] max-md:order-first max-md:flex-none max-md:h-[40dvh] max-md:min-h-[160px]" : ""}`}>
 					<div className="relative w-full h-full bg-black rounded-2xl overflow-hidden">
 						{/* Their sound plays here, so swapping the videos never cuts it */}
 						{showRemote && <audio autoPlay ref={(a) => a && a.srcObject !== remoteStream && (a.srcObject = remoteStream)} />}
@@ -612,7 +613,7 @@ return (
 						{myStream && (
 							// Your own camera, shown like a mirror (as in Google Meet; the other person gets the true picture).
 							// Alone it fills the stage; with someone there it is a small tile bottom-right
-							<div className={alone ? "absolute inset-0" : "absolute bottom-3 right-3 z-10 w-32 sm:w-56 aspect-video border-white/70 border-2 rounded-lg overflow-hidden shadow-lg bg-zinc-800"}>
+							<div className={alone ? "absolute inset-0" : `absolute bottom-3 right-3 z-10 ${chatOpen ? "w-24" : "w-32"} sm:w-56 aspect-video border-white/70 border-2 rounded-lg overflow-hidden shadow-lg bg-zinc-800`}>
 								<video
 									autoPlay
 									muted
