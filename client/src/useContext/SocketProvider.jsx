@@ -20,9 +20,9 @@ export const SocketProvider = (props) => {
       const socket = useMemo(() => {
             const URL = import.meta.env.REACT_APP_SOCKET_SERVER_URL;
 
-            return io(URL, {
-                  transports: ["websocket"],
-            });
+            // Socket.IO's normal start: long-polling first, then an upgrade to a WebSocket where the network
+            // allows it, so it also connects behind proxies that block WebSockets
+            return io(URL);
       }, []);
 
       const [status, setStatus] = useState(() => (socket.connected ? "connected" : "connecting"));

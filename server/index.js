@@ -19,9 +19,12 @@ const ALLOWED_ORIGINS = [
   "http://localhost:3000"
 ];
 
+// Connections start with long-polling, which the browser only allows from these sites (CORS). Local development
+// and test servers on any port are allowed too: WebSockets were never origin-checked, so this opens nothing new
+const LOCAL = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
 const io = new Server(server, {
   cors: {
-    origin: ALLOWED_ORIGINS,
+    origin: (origin, allow) => allow(null, !origin || ALLOWED_ORIGINS.includes(origin) || LOCAL.test(origin)),
     methods: ["GET", "POST"]
   }
 });
