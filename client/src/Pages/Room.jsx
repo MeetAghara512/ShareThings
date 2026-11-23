@@ -837,8 +837,9 @@ return (
 						{/* Reactions float up over the sender: theirs above their name, yours above your own tile */}
 						{showRemote && <ReactionLayer mine={false} className="absolute z-20 bottom-12 left-4 w-24 h-0" />}
 						{!alone && <ReactionLayer mine className={`absolute z-20 bottom-3 right-3 ${chatOpen ? "w-24" : "w-32"} sm:w-56 aspect-video`} />}
-						{/* Small notices stack here, under what is already at the top (phone status, sharing, "Notify me"), so none covers another */}
-						<div style={{ top: `${Math.max(belowTile + (isScreen ? 3 : 0), 1 + 3 * ((!wide && status ? 1 : 0) + (isScreen ? 1 : 0) + (alone ? 1 : 0)))}rem` }} className="absolute z-30 inset-x-2 bottom-2 flex flex-col items-center gap-2 pointer-events-none">
+						{/* Small notices stack here, under what is already at the top (phone status, sharing), so none covers another */}
+						<div style={{ top: `${Math.max(belowTile + (isScreen ? 3 : 0), 1 + 3 * ((!wide && status ? 1 : 0) + (isScreen ? 1 : 0)))}rem` }} className="absolute z-30 inset-x-2 bottom-2 flex flex-col items-center gap-2 pointer-events-none">
+							{alone && !admission && <JoinNotice className="pointer-events-auto" />}
 							{!wide && joinRequests}
 							<MutedWarning stream={myStream} muted={muted} hint={`press ${keyText("mic")} or the mic button to unmute`} />
 							{paused && (
@@ -850,7 +851,6 @@ return (
 						{help && deviceTrouble[help] && (
 							<DeviceHelp kind={help} trouble={deviceTrouble[help]} darkMode={darkMode} onClose={() => setHelp(null)} className="absolute z-30 bottom-3 left-1/2 -translate-x-1/2 w-[min(24rem,calc(100%-1.5rem))]" />
 						)}
-						{alone && !admission && <JoinNotice className={`absolute ${isScreen ? "top-16" : "top-4"} left-1/2 -translate-x-1/2 z-10`} />}
 						{isHost && removing && removing === remoteSocketId && (
 							<div className="absolute inset-0 z-40 flex items-center justify-center p-4 bg-black/60" onKeyDown={e => e.key === "Escape" && setRemoving(null)}>
 								<div role="alertdialog" aria-modal="true" aria-label="Remove from the call" className={`w-full max-w-xs max-h-full overflow-y-auto p-4 rounded-xl shadow-2xl space-y-4 text-center ${darkMode ? "bg-gray-800 text-gray-100" : "bg-white text-gray-900"}`}>
