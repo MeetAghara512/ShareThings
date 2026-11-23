@@ -19,15 +19,16 @@ export const refreshSpeakers = async () => {
 	const list = (await navigator.mediaDevices?.enumerateDevices().catch(() => []) ?? []).filter(d => d.kind === "audiooutput" && d.deviceId);
 	// "default" and Windows' "communications" are other names for a real device
 	const devices = list.filter(d => d.deviceId !== "default" && d.deviceId !== "communications");
-	// Nothing listed: no mic permission yet, which says nothing about the saved speaker
-	const gone = list.length > 0 && state.id && !devices.some(d => d.deviceId === state.id);
-	if (gone) localStorage.removeItem(SPEAKER_KEY);
+	// A saved speaker that is not listed (a headset can drop for a moment): the default for now, and back when it
+	// returns. Nothing listed: no mic permission yet, which says nothing about it
+	const saved = localStorage.getItem(SPEAKER_KEY) || "";
+	const id = !list.length ? state.id : devices.some(d => d.deviceId === saved) ? saved : "";
 	set({
 		speakers: devices.length < 2 ? [] : [
 			{ id: "", label: list.find(d => d.deviceId === "default")?.label || "System default" },
 			...devices.map((d, i) => ({ id: d.deviceId, label: d.label || `Speaker ${i + 1}` })),
 		],
-		id: gone ? "" : state.id,
+		id,
 	});
 };
 
@@ -50,11 +51,10 @@ export const pickSpeaker = id => {
 	set({ id });
 };
 
-// A speaker that fails: back to the default, so the call keeps its sound. Only one that no longer exists is forgotten
+// A speaker that fails: back to the default, so the call keeps its sound. The saved choice stays for when it returns
 const fallBack = (id, error) => {
 	console.error("Speaker could not be used", error);
 	if (state.id !== id) return; // another one was picked meanwhile
-	if (error?.name === "NotFoundError") localStorage.removeItem(SPEAKER_KEY);
 	set({ id: "" });
 };
 
