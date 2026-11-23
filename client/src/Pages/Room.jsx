@@ -841,7 +841,7 @@ return (
 						<div style={{ top: `${Math.max(belowTile + (isScreen ? 3 : 0), 1 + 3 * ((!wide && status ? 1 : 0) + (isScreen ? 1 : 0)))}rem` }} className="absolute z-30 inset-x-2 bottom-2 flex flex-col items-center gap-2 pointer-events-none">
 							{alone && !admission && <JoinNotice className="pointer-events-auto" />}
 							{!wide && joinRequests}
-							<MutedWarning stream={myStream} muted={muted} hint={`press ${keyText("mic")} or the mic button to unmute`} />
+							<MutedWarning stream={myStream} muted={muted} hint={window.matchMedia("(pointer: fine)").matches ? `press ${keyText("mic")} or the mic button to unmute` : "tap the mic button to unmute"} />
 							{paused && (
 								<div role="status" className="max-w-full px-4 py-2 rounded-full bg-amber-500 text-black text-sm font-semibold shadow text-center">
 									Weak connection — video paused, audio continues
