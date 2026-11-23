@@ -3,6 +3,7 @@ import { MdMic, MdMicOff, MdVideocam, MdVideocamOff, MdPresentToAll, MdCallEnd, 
 import { ChatButton } from "./ChatPanel";
 import InviteForm from "./InviteForm";
 import { HELP, troubleText } from "../Services/devices";
+import { SHORTCUTS, keyText, ariaKeys } from "../Services/shortcuts";
 
 // Time of day, as in the corner of Google Meet
 const Clock = () => {
@@ -40,8 +41,8 @@ const ControlBar = ({ darkMode, roomId, status, muted, cameraOff, trouble = {}, 
 	const on = "bg-indigo-600 hover:bg-indigo-700 text-white";
 	const plain = darkMode ? "hover:bg-gray-700" : "hover:bg-gray-200";
 	// Icon only: the label is the tooltip and what screen readers say
-	const button = (label, onClick, look, icon, mark) => (
-		<button type="button" onClick={onClick} title={label} aria-label={label} className={`relative ${round} ${look}`}>
+	const button = (label, onClick, look, icon, mark, shortcut) => (
+		<button type="button" onClick={onClick} title={shortcut ? `${label} (${keyText(shortcut)})` : label} aria-label={label} aria-keyshortcuts={shortcut && ariaKeys(shortcut)} className={`relative ${round} ${look}`}>
 			{icon}
 			{mark && <TroubleMark />}
 		</button>
@@ -58,12 +59,12 @@ const ControlBar = ({ darkMode, roomId, status, muted, cameraOff, trouble = {}, 
 
 			<div className="flex items-center gap-2 sm:gap-3">
 				{trouble.audio
-					? button(troubleText("audio", trouble.audio), onToggleMic, off, <MdMicOff />, true)
-					: button(muted ? "Turn on microphone" : "Turn off microphone", onToggleMic, muted ? off : idle, muted ? <MdMicOff /> : <MdMic />)}
+					? button(troubleText("audio", trouble.audio), onToggleMic, off, <MdMicOff />, true, "mic")
+					: button(muted ? "Turn on microphone" : "Turn off microphone", onToggleMic, muted ? off : idle, muted ? <MdMicOff /> : <MdMic />, false, "mic")}
 				{trouble.video
-					? button(troubleText("video", trouble.video), onToggleCamera, off, <MdVideocamOff />, true)
-					: button(cameraOff ? "Turn on camera" : "Turn off camera", onToggleCamera, cameraOff ? off : idle, cameraOff ? <MdVideocamOff /> : <MdVideocam />)}
-				{button(isScreen ? "Stop sharing" : "Share screen", onToggleShare, isScreen ? on : idle, <MdPresentToAll />)}
+					? button(troubleText("video", trouble.video), onToggleCamera, off, <MdVideocamOff />, true, "camera")
+					: button(cameraOff ? "Turn on camera" : "Turn off camera", onToggleCamera, cameraOff ? off : idle, cameraOff ? <MdVideocamOff /> : <MdVideocam />, false, "camera")}
+				{button(isScreen ? "Stop sharing" : "Share screen", onToggleShare, isScreen ? on : idle, <MdPresentToAll />, false, "share")}
 				<ChatButton className={round} look={idle} />
 				<button type="button" onClick={onLeave} title="Leave call" aria-label="Leave call" className={`${round} w-14 sm:w-16 ${off}`}>
 					<MdCallEnd />
@@ -110,6 +111,20 @@ export const MeetingCard = ({ darkMode, roomId, alone, copied, onCopy, onClose }
 					<MdMailOutline className="text-lg" /> Invite by email
 				</button>
 			)}
+			{/* Only where there is a keyboard and a mouse, not on phones */}
+			<div className="hidden [@media(pointer:fine)]:block space-y-1.5 pt-1">
+				<h4 className="font-medium">Keyboard shortcuts</h4>
+				<dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+					{SHORTCUTS.map(s => (
+						<React.Fragment key={s.action}>
+							<dt><kbd className="font-mono text-xs">{keyText(s.action)}</kbd></dt>
+							<dd className="opacity-80">{s.label}</dd>
+						</React.Fragment>
+					))}
+					<dt><kbd className="font-mono text-xs">Esc</kbd></dt>
+					<dd className="opacity-80">Close the chat while typing in it</dd>
+				</dl>
+			</div>
 		</section>
 	);
 };

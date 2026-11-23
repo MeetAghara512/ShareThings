@@ -4,6 +4,7 @@ import { MdChatBubbleOutline } from "react-icons/md";
 import * as chat from "../Services/chat";
 import * as files from "../Services/files";
 import { useSocket } from "../useContext/SocketProvider";
+import { keyText, ariaKeys } from "../Services/shortcuts";
 
 const useChat = () => useSyncExternalStore(chat.subscribe, chat.getState);
 // On wide screens the room makes space for the open panel, so it never covers the call controls
@@ -31,7 +32,8 @@ export const ChatButton = ({ className, look }) => {
 			onClick={() => chat.setOpen(!open)}
 			aria-pressed={open}
 			aria-label={unread ? `Chat, ${unread} unread` : "Chat"}
-			title="Chat"
+			title={`Chat (${keyText("chat")})`}
+			aria-keyshortcuts={ariaKeys("chat")}
 			className={`relative ${className} ${open ? "bg-indigo-600 hover:bg-indigo-700 text-white" : look}`}
 		>
 			<MdChatBubbleOutline />
@@ -226,6 +228,7 @@ const ChatPanel = ({ darkMode, remoteName }) => {
 						type="text"
 						value={text}
 						onChange={e => setText(e.target.value)}
+						onKeyDown={e => e.key === "Escape" && chat.setOpen(false)}
 						disabled={!ready}
 						maxLength={chat.MAX_TEXT}
 						placeholder="Type a message"

@@ -10,6 +10,8 @@ import CallStatus from "./CallStatus";
 import Preview from "./Preview";
 import ChatPanel, { useChatOpen } from "./ChatPanel";
 import MutedWarning from "./MutedWarning";
+import { useCallShortcuts, keyText } from "../Services/shortcuts";
+import * as chat from "../Services/chat";
 import ControlBar, { DeviceHelp, MeetingCard } from "./ControlBar";
 
 // What the other side last told us about their camera, mic and shared screen (has*: there is a device at all)
@@ -515,6 +517,13 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	const alone = !remoteSocketId;
 	// A device with no track is shown as missing, even if the join screen never said why
 	const deviceTrouble = { audio: hasMic ? null : trouble.audio || "missing", video: hasCamera ? null : trouble.video || "missing" };
+	// ⌘/Ctrl+D mic, ⌘/Ctrl+E camera, ⌘/Ctrl+Shift+C chat, ⌘/Ctrl+Shift+S screen: the same as the bar's buttons
+	useCallShortcuts({
+		mic: deviceTrouble.audio ? () => fixDevice("audio") : handleToggleMic,
+		camera: deviceTrouble.video ? () => fixDevice("video") : handleToggleCamera,
+		chat: () => chat.setOpen(!chat.getState().open),
+		share: isScreen ? stopShare : startShare,
+	}, joined);
 	// A first letter in a circle, for someone without a camera
 	const avatar = (name, size) => (
 		<span className={`${size} rounded-full bg-indigo-600 text-white font-semibold flex items-center justify-center uppercase`}>{(name || "?").trim().charAt(0)}</span>
@@ -665,7 +674,7 @@ return (
 								<FaDesktop className="shrink-0" /> You are sharing your screen
 							</div>
 						)}
-						<MutedWarning stream={myStream} muted={muted} />
+						<MutedWarning stream={myStream} muted={muted} hint={`press ${keyText("mic")} or the mic button to unmute`} />
 						{help && deviceTrouble[help] && (
 							<DeviceHelp kind={help} trouble={deviceTrouble[help]} darkMode={darkMode} onClose={() => setHelp(null)} className="absolute z-30 bottom-3 left-1/2 -translate-x-1/2 w-[min(24rem,calc(100%-1.5rem))]" />
 						)}
