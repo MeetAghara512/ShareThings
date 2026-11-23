@@ -5,16 +5,16 @@ import * as privacy from "../Services/privateCheck";
 
 const LOOK = {
 	verified: { Icon: MdVerifiedUser, color: "text-green-500", title: "Verified private" },
-	private: { Icon: MdOutlineShield, color: "opacity-80", title: "Private" },
+	private: { Icon: MdOutlineShield, color: "opacity-80", title: "Not verified" },
 	failed: { Icon: MdGppBad, color: "text-red-500", title: "Could not verify this connection" },
 };
 
 const explain = (reason, who) => ({
-	proven: `Verified with your link: nobody is between you and ${who}, not even our server. This relies on the ShareThings page your browser loaded.`,
+	proven: "Verified with your link: this connection is with someone who has your link. A name is only what that person typed. This relies on the ShareThings page your browser loaded.",
 	waiting: "Checking this connection…",
-	"no-link": "Not proven: you did not open this call from its private link, so nobody can be ruled out in between.",
-	"no-proof": `Not proven: ${who} did not open the private link. A typed code or an emailed invite has no proof.`,
-	"no-stats": "Not proven: this browser does not report the keys of the connection.",
+	"no-link": "Not verified: you did not open this call from its private link, so nobody can be ruled out in between.",
+	"no-proof": "Not verified: no proof arrived from the other side. They may have used a typed code or an emailed invite, or something may have blocked the check.",
+	"no-stats": "Not verified: this browser does not report the keys of the connection.",
 	wrong: `A check from ${who} did not match. Someone could be in between, or they opened a different link. Do not share anything sensitive; leave and start a new call from a fresh link.`,
 }[reason]);
 
@@ -66,10 +66,9 @@ const PrivacyShield = ({ remoteName, darkMode }) => {
 					</div>
 					<ul className="list-disc pl-5 space-y-1">
 						{state.encrypted && <li>Encrypted</li>}
-						{state.relay === false && <li>Direct between your two devices</li>}
-						{state.relay === true && <li>Through an encrypted relay that cannot see the call</li>}
-						{state.encrypted && state.status === "verified" && <li>Only you and {who}</li>}
-						{state.encrypted && state.status === "private" && <li>One connection, to the person shown as {who}</li>}
+						{state.relay === false && <li>{state.status === "verified" ? "Direct between your two devices" : "Direct connection"}</li>}
+						{state.relay === true && <li>{state.status === "verified" ? "Through an encrypted relay that cannot see the call" : "Through a relay"}</li>}
+						{state.encrypted && state.status === "verified" && <li>With someone who has your link</li>}
 					</ul>
 					<p className="opacity-80">{explain(state.reason, who)}</p>
 				</section>,
