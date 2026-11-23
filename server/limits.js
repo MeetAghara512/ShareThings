@@ -6,6 +6,7 @@ const MAX_CONNECTIONS = 30; // new socket connections per address
 const MAX_JOINS = 30; // room:join per address
 const MAX_PEEKS = 120; // room:peek per address: generous, since a whole office can share one address
 const MAX_PEEKS_PER_SOCKET = 30; // room:peek per socket: an open join screen asks every 4 s, 15 times a minute
+const MAX_STATS_PER_SOCKET = 60; // stats:get per socket: the first page asks once, a network check 5 times
 const TOO_MANY = "Too many attempts, wait a minute and try again";
 
 // The client's internet address. cf-connecting-ip is set by the host's edge and cannot be forged through it;
@@ -23,7 +24,7 @@ function isLocal(socket) {
 }
 
 // Each map: key (address or socket id) -> times of its recent requests
-const counts = { connections: new Map(), joins: new Map(), peeks: new Map(), socketPeeks: new Map() };
+const counts = { connections: new Map(), joins: new Map(), peeks: new Map(), socketPeeks: new Map(), socketStats: new Map() };
 
 // The key's requests still inside the window (stored back, so the caller can add the new one)
 function recent(map, key, now) {
@@ -76,4 +77,8 @@ function peekLimited(socket, ack) {
   return true;
 }
 
-module.exports = { clientAddress, limitConnections, joinLimited, peekLimited };
+// True when this stats:get is over the socket's limit. It then gets no answer, so the join screen's network check
+// counts it as a lost round trip, never as a good one
+const statsLimited = socket => !isLocal(socket) && !allow(counts.socketStats, socket.id, MAX_STATS_PER_SOCKET);
+
+module.exports = { clientAddress, limitConnections, joinLimited, peekLimited, statsLimited };
