@@ -116,7 +116,7 @@ function takeSeat(room, socket, clientId, resume) {
     older.leave(room); // first, so its disconnect does not tell anyone it left
     older.disconnect(true);
   }
-  if (!resume) socket.to(room).emit("user:left", { id: (kept ?? older).id });
+  if (!resume) socket.to(room).emit("user:left", { id: (kept ?? older).id, back: true }); // the old connection ends, the person stays
   return true;
 }
 
