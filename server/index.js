@@ -204,7 +204,7 @@ io.on("connection", socket => {
     if (typeof ack === "function") ack(result);
   });
 
-  // Names of the people in a room, for the join screen. Does not join it.
+  // How many people are in a room, for the join screen. Does not join it.
   // A seat kept for this tab itself (its connection dropped, then it reloaded) is not counted
   socket.on("room:peek", ({ room, clientId }, ack) => {
     if (peekLimited(socket, ack)) return;
