@@ -1,10 +1,10 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { FaMoon, FaSun } from "react-icons/fa";
-import { useAuth, GoogleSignInButton, googleLoaded, isSignInTab } from "../useContext/AuthProvider";
+import { useAuth, GoogleSignInButton, isSignInTab } from "../useContext/AuthProvider";
 import ServerStatus from "./ServerStatus";
 import LiveCount from "./LiveCount";
-import { markNewRoom, newRoomHash } from "../Services/roomSecret";
+import { newRoomHash } from "../Services/roomSecret";
 
 // A new room code like Google Meet's: 10 random letters as abc-defg-hij, 26^10 ≈ 141 trillion codes,
 // so live rooms cannot be found by guessing. getRandomValues also works on plain-HTTP test pages.
@@ -17,6 +17,7 @@ const Lobby = ({ darkMode, toggleDarkMode }) => {
 	const { user, signOut } = useAuth();
 	const [room, setRoom] = useState("");
 	const navigate = useNavigate();
+	const signInOnly = isSignInTab(); // this tab was opened just for signing in
 
 	// The sign-in tab's job is done: the other tabs got it through localStorage
 	useEffect(() => {
@@ -29,10 +30,7 @@ const Lobby = ({ darkMode, toggleDarkMode }) => {
 			// No room entered: create a new one with a random ID
 			const roomId = room.trim() || newRoomCode();
 			// Only a room made here gets a private-link secret: a typed code may already be someone else's room
-			const path = `/room/${encodeURIComponent(roomId)}`;
-			// Google's script must not stay on a room's page or see its secret: a fresh page load leaves it behind and makes the secret there
-			if (googleLoaded()) window.location.assign(room.trim() ? path : markNewRoom(path));
-			else navigate(`${path}${room.trim() ? "" : newRoomHash()}`);
+			navigate(`/room/${encodeURIComponent(roomId)}${room.trim() ? "" : newRoomHash()}`);
 		},
 		[room, navigate]
 	);
@@ -45,7 +43,7 @@ const Lobby = ({ darkMode, toggleDarkMode }) => {
 					: "bg-gradient-to-br from-gray-100 to-gray-200 text-gray-900")
 			}
 		>
-			<header className="flex justify-between items-center p-5 shadow border-b">
+			<header className={`flex justify-between items-center p-5 shadow border-b ${darkMode ? "border-white/10" : "border-gray-200"}`}>
 						<h2 className="text-2xl font-extrabold bg-gradient-to-r from-indigo-400 via-purple-500 to-pink-500 bg-clip-text text-transparent transition duration-300 hover:from-pink-500 hover:to-indigo-400">
 							ShareThings
 						</h2>
@@ -60,16 +58,16 @@ const Lobby = ({ darkMode, toggleDarkMode }) => {
 
 			<main className="flex-grow flex flex-col items-center justify-center px-6 py-12 sm:py-20">
 				<h2
-					className={`text-5xl font-extrabold mb-10 text-center transition-colors duration-500 ` +
+					className={`text-3xl sm:text-5xl font-extrabold mb-8 sm:mb-10 text-center transition-colors duration-500 ` +
 						(darkMode ? "text-indigo-300" : "text-indigo-600")
 					}
 				>
-					Join a Video Call Room
+					{signInOnly ? "Sign in to ShareThings" : "Join a Video Call Room"}
 				</h2>
 
 				<form
 					onSubmit={handleSubmit}
-					className={`w-full max-w-lg px-8 py-10 rounded-2xl shadow-2xl space-y-8 transition-transform duration-300 hover:scale-105 ` +
+					className={`w-full max-w-lg px-8 py-10 rounded-2xl shadow-2xl space-y-8 ` +
 						(darkMode
 							? "bg-gray-800 text-gray-100"
 							: "bg-white text-gray-900")
@@ -78,7 +76,7 @@ const Lobby = ({ darkMode, toggleDarkMode }) => {
 					<div className="space-y-2 text-sm">
 						{user ? (
 							<div className="flex items-center justify-between gap-3">
-								{isSignInTab() ? <span>You're signed in. You can close this tab.</span> : <span className="truncate">Signed in as <strong>{user.email}</strong></span>}
+								{signInOnly ? <span>You're signed in. You can close this tab.</span> : <span className="truncate">Signed in as <strong>{user.email}</strong></span>}
 								<button type="button" onClick={signOut} className="underline shrink-0 hover:text-indigo-400">
 									Sign out
 								</button>
@@ -86,11 +84,12 @@ const Lobby = ({ darkMode, toggleDarkMode }) => {
 						) : (
 							<>
 								<GoogleSignInButton />
-								<p className="opacity-60">Optional. You can join a call without signing in.</p>
+								{!signInOnly && <p className="opacity-60">Optional. You can join a call without signing in.</p>}
 							</>
 						)}
 					</div>
 
+					{!signInOnly && <>
 					<div className="space-y-2">
 						<label htmlFor="room" className="block text-sm font-medium">
 							Room code <span className="opacity-60">(leave empty to create a new room)</span>
@@ -111,12 +110,13 @@ const Lobby = ({ darkMode, toggleDarkMode }) => {
 
 					<button
 						type="submit"
-						className="w-full py-3 rounded-lg bg-indigo-600 text-white font-semibold text-lg transition-transform duration-300 hover:bg-indigo-700 hover:-translate-y-1 hover:shadow-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+						className="w-full py-3 rounded-lg bg-indigo-600 text-white font-semibold text-lg transition-colors hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
 					>
 						{room.trim() ? "Join Room" : "Create Room"}
 					</button>
 					<LiveCount />
 					<ServerStatus />
+					</>}
 				</form>
 			</main>
 

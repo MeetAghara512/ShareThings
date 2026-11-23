@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from "react";
+import { MdCheckCircle, MdWarning } from "react-icons/md";
 import { useSocket, useSocketStatus } from "../useContext/SocketProvider";
 import { checkNetwork } from "../Services/netcheck";
 
-const ROUTE_TEXT = {
-	direct: "A direct connection is likely",
-	relay: "Your call may need to go through a relay",
-	unknown: "Could not tell whether a direct connection is likely",
+const RESULTS = {
+	good: { Icon: MdCheckCircle, color: "text-green-500", text: "Good network" },
+	weak: { Icon: MdWarning, color: "text-amber-500", text: "Weak network" },
+	limited: { Icon: MdWarning, color: "text-amber-500", text: "Try again in a minute" },
 };
 
 // "Good / Weak network" on the join screen. Nothing runs until the button is clicked
@@ -28,29 +29,20 @@ const NetworkCheck = () => {
 		setChecking(false);
 	};
 
+	const shown = result && RESULTS[result.limited ? "limited" : result.good ? "good" : "weak"];
 	return (
-		<div className="space-y-1 text-sm">
+		<div className="flex flex-wrap items-center text-sm">
+			<span aria-live="polite">
+				{shown && <span className={`inline-flex items-center gap-1 mr-3 font-medium ${shown.color}`}><shown.Icon aria-hidden="true" /> {shown.text}</span>}
+			</span>
 			<button
 				type="button"
 				onClick={run}
 				disabled={checking || status !== "connected"}
 				className="font-medium text-indigo-500 hover:underline disabled:opacity-50 disabled:cursor-not-allowed disabled:no-underline"
 			>
-				{checking ? "Checking network…" : result ? "Check again" : "Check my network"}
+				{checking ? "Checking…" : result ? "Check again" : "Check my network"}
 			</button>
-			<div aria-live="polite">
-				{result?.limited && <p className="font-medium text-amber-500">Too many checks, try again in a minute</p>}
-				{result && !result.limited && (
-					<>
-						<p className={`font-medium ${result.good ? "text-green-500" : "text-amber-500"}`}>{result.good ? "Good network" : "Weak network"}</p>
-						<p className="opacity-70">
-							{result.answered ? `Server answered ${result.answered} of ${result.asked} checks, typically in ${result.ms} ms` : "The server did not answer"}
-						</p>
-						{ROUTE_TEXT[result.route] && <p className="opacity-70">{ROUTE_TEXT[result.route]}</p>}
-						<p className="opacity-60">Upload and download speed are not measured.</p>
-					</>
-				)}
-			</div>
 		</div>
 	);
 };

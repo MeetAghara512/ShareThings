@@ -4,7 +4,7 @@ import { ChatButton } from "./ChatPanel";
 import { ReactionButton } from "./Reactions";
 import InviteForm from "./InviteForm";
 import { HELP, troubleText } from "../Services/devices";
-import { CAN_SHARE_SCREEN, SHORTCUTS, keyText, ariaKeys } from "../Services/shortcuts";
+import { CAN_SHARE_SCREEN, keyText, ariaKeys } from "../Services/shortcuts";
 import { MODES } from "../Services/quality";
 import { pickSpeaker, useSpeaker } from "./Speaker";
 
@@ -33,12 +33,6 @@ export const DeviceHelp = ({ kind, trouble, darkMode, onClose, className = "" })
 		</button>
 	</div>
 );
-
-const QUALITY_NOTES = {
-	auto: "Sized to the other screen and your connection",
-	high: "The best picture your connection allows",
-	saver: "For mobile data: at most 360p",
-};
 
 // "More options": the video quality setting, the speaker, popping out the video, the theme and, for the host,
 // removing the other person
@@ -73,12 +67,9 @@ const MoreMenu = ({ darkMode, quality, onQuality, onPopOut, onToggleDarkMode, re
 				<div role="menu" aria-label="More options" className={`absolute z-50 bottom-full right-0 mb-2 w-72 max-h-[calc(100dvh-6rem)] overflow-y-auto py-2 rounded-xl shadow-2xl text-sm ${darkMode ? "bg-gray-800 text-gray-100" : "bg-white text-gray-900"}`}>
 					<p className="px-4 pb-1 text-xs font-semibold uppercase opacity-60">Video quality</p>
 					{Object.entries(MODES).map(([value, label]) => (
-						<button key={value} type="button" role="menuitemradio" aria-checked={quality === value} onClick={choose(() => onQuality(value))} className={item}>
-							<span className={`mt-1 w-3 h-3 shrink-0 rounded-full border-2 ${quality === value ? "bg-indigo-500 border-indigo-500" : "border-gray-400"}`} />
-							<span>
-								<span className="block font-medium">{label}</span>
-								<span className="block text-xs opacity-60">{QUALITY_NOTES[value]}</span>
-							</span>
+						<button key={value} type="button" role="menuitemradio" aria-checked={quality === value} onClick={choose(() => onQuality(value))} className={`${item} items-center`}>
+							<span className={`w-3 h-3 shrink-0 rounded-full border-2 ${quality === value ? "bg-indigo-500 border-indigo-500" : "border-gray-400"}`} />
+							<span>{label}</span>
 						</button>
 					))}
 					{speakers.length > 0 && (
@@ -196,20 +187,6 @@ export const MeetingCard = ({ darkMode, roomId, alone, copied, onCopy, onClose }
 					<MdMailOutline className="text-lg" /> Invite by email
 				</button>
 			)}
-			{/* Only where there is a keyboard and a mouse, not on phones */}
-			<div className="hidden [@media(pointer:fine)]:block space-y-1.5 pt-1">
-				<h4 className="font-medium">Keyboard shortcuts</h4>
-				<dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
-					{SHORTCUTS.filter(s => s.action !== "share" || CAN_SHARE_SCREEN).map(s => (
-						<React.Fragment key={s.action}>
-							<dt><kbd className="font-mono text-xs">{keyText(s.action)}</kbd></dt>
-							<dd className="opacity-80">{s.label}</dd>
-						</React.Fragment>
-					))}
-					<dt><kbd className="font-mono text-xs">Esc</kbd></dt>
-					<dd className="opacity-80">Close the chat while typing in it</dd>
-				</dl>
-			</div>
 		</section>
 	);
 };

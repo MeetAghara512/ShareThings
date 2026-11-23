@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { FaVideo, FaVideoSlash, FaMicrophone, FaMicrophoneSlash, FaRedo } from "react-icons/fa";
+import { MdExpandMore, MdSettings } from "react-icons/md";
 import { openDevice, openEach, onGranted, permission, troubleOf, troubleText } from "../Services/devices";
 import clientId from "../Services/clientId";
 import { DeviceHelp, TroubleMark } from "./ControlBar";
@@ -339,6 +340,13 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 					/>
 				</label>
 
+				{/* Closed by default, so Join now is on screen without scrolling, also on phones */}
+				<details className="group text-sm">
+					<summary className={`flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer list-none font-medium [&::-webkit-details-marker]:hidden ${darkMode ? "bg-gray-700/60 hover:bg-gray-700" : "bg-gray-100 hover:bg-gray-200"}`}>
+						<MdSettings className="text-lg" /> Camera, mic and network
+						<MdExpandMore className="ml-auto text-xl transition-transform group-open:rotate-180" />
+					</summary>
+					<div className="space-y-4 pt-4">
 				<div className="space-y-1 text-sm">
 					<span className="block font-medium">Microphone level{muted && " (muted)"}</span>
 					<div aria-label="Microphone level" className={`h-2 rounded-full overflow-hidden ${darkMode ? "bg-gray-600" : "bg-gray-200"}`}>
@@ -372,6 +380,8 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 				)}
 
 				<NetworkCheck />
+					</div>
+				</details>
 
 				{without.length > 0 && (
 					<p className="text-sm text-amber-500">

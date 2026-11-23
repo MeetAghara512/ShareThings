@@ -16,7 +16,7 @@ const InviteForm = ({ roomId, darkMode }) => {
 	if (!user) {
 		return (
 			<div className="flex flex-col items-center gap-2 text-sm">
-				{/* In another tab, so Google's script never runs next to this room's secret. The sign-in reaches this tab by itself */}
+				{/* In another tab, because leaving this page would end the call. The sign-in reaches this tab by itself */}
 				<a href={SIGN_IN_PAGE} target="_blank" rel="noopener noreferrer" className="px-4 py-2 rounded-full border border-gray-400 font-medium hover:bg-gray-500/10">
 					Sign in (opens a new tab)
 				</a>
