@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { FaMoon, FaSun } from "react-icons/fa";
-import { useAuth, GoogleSignInButton } from "../useContext/AuthProvider";
+import { useAuth, GoogleSignInButton, googleLoaded } from "../useContext/AuthProvider";
 import ServerStatus from "./ServerStatus";
 import LiveCount from "./LiveCount";
 import { newRoomHash } from "../Services/roomSecret";
@@ -24,7 +24,10 @@ const Lobby = ({ darkMode, toggleDarkMode }) => {
 			// No room entered: create a new one with a random ID
 			const roomId = room.trim() || newRoomCode();
 			// Only a room made here gets a private-link secret: a typed code may already be someone else's room
-			navigate(`/room/${encodeURIComponent(roomId)}${room.trim() ? "" : newRoomHash()}`);
+			const link = `/room/${encodeURIComponent(roomId)}${room.trim() ? "" : newRoomHash()}`;
+			// Google's script must not stay on a room's page: a fresh page load leaves it behind
+			if (googleLoaded()) window.location.assign(link);
+			else navigate(link);
 		},
 		[room, navigate]
 	);
