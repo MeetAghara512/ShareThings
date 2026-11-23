@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { FaEnvelope } from "react-icons/fa";
 import { useSocket } from "../useContext/SocketProvider";
-import { useAuth } from "../useContext/AuthProvider";
+import { SIGN_IN_PAGE, useAuth } from "../useContext/AuthProvider";
 
 // Shown while waiting in a room: a signed-in user can have the room link emailed to a guest
 const InviteForm = ({ roomId, darkMode }) => {
@@ -17,7 +17,7 @@ const InviteForm = ({ roomId, darkMode }) => {
 		return (
 			<div className="flex flex-col items-center gap-2 text-sm">
 				{/* In another tab, so Google's script never runs next to this room's secret. The sign-in reaches this tab by itself */}
-				<a href="/" target="_blank" rel="noopener noreferrer" className="px-4 py-2 rounded-full border border-gray-400 font-medium hover:bg-gray-500/10">
+				<a href={SIGN_IN_PAGE} target="_blank" rel="noopener noreferrer" className="px-4 py-2 rounded-full border border-gray-400 font-medium hover:bg-gray-500/10">
 					Sign in (opens a new tab)
 				</a>
 				<p className="opacity-60 text-center">Sign in there to invite someone by email. This call stays open.</p>

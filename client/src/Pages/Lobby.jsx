@@ -1,7 +1,7 @@
-import React, { useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { FaMoon, FaSun } from "react-icons/fa";
-import { useAuth, GoogleSignInButton, googleLoaded } from "../useContext/AuthProvider";
+import { useAuth, GoogleSignInButton, googleLoaded, isSignInTab } from "../useContext/AuthProvider";
 import ServerStatus from "./ServerStatus";
 import LiveCount from "./LiveCount";
 import { markNewRoom, newRoomHash } from "../Services/roomSecret";
@@ -17,6 +17,11 @@ const Lobby = ({ darkMode, toggleDarkMode }) => {
 	const { user, signOut } = useAuth();
 	const [room, setRoom] = useState("");
 	const navigate = useNavigate();
+
+	// The sign-in tab's job is done: the other tabs got it through localStorage
+	useEffect(() => {
+		if (user && isSignInTab()) window.close();
+	}, [user]);
 
 	const handleSubmit = useCallback(
 		(e) => {
@@ -73,7 +78,7 @@ const Lobby = ({ darkMode, toggleDarkMode }) => {
 					<div className="space-y-2 text-sm">
 						{user ? (
 							<div className="flex items-center justify-between gap-3">
-								<span className="truncate">Signed in as <strong>{user.email}</strong></span>
+								{isSignInTab() ? <span>You're signed in. You can close this tab.</span> : <span className="truncate">Signed in as <strong>{user.email}</strong></span>}
 								<button type="button" onClick={signOut} className="underline shrink-0 hover:text-indigo-400">
 									Sign out
 								</button>
