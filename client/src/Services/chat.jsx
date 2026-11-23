@@ -69,6 +69,12 @@ export const registerFiles = hooks => {
 	files = hooks;
 };
 
+// privateCheck.jsx: up(link) once both sides said hello, down(link), message(link, msg)
+let proof = {};
+export const registerProof = hooks => {
+	proof = hooks;
+};
+
 // The current connection's channels. A new connection (peer.reset) ends the old one
 let link = null;
 
@@ -91,6 +97,7 @@ const endLink = () => {
 	link = null;
 	if (!l) return;
 	files.down?.(l);
+	proof.down?.(l);
 	set({ ready: false, filesOk: false });
 };
 
@@ -119,6 +126,9 @@ const onChat = (l, data) => {
 		set({ ready: true, filesOk: msg.v === 2 });
 		files.up?.(l);
 		l.early.splice(0).forEach(early => files.message?.(l, early));
+		proof.up?.(l);
+	} else if (msg?.type === "proof" && l.ready) {
+		proof.message?.(l, msg);
 	} else if (msg?.type === "chat" && l.ready && typeof msg.text === "string" && msg.text.trim() && msg.text.length <= MAX_TEXT) {
 		add({ kind: "text", mine: false, name: peerName, text: msg.text });
 		bump();
