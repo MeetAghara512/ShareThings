@@ -5,6 +5,7 @@ import { checkNetwork } from "../Services/netcheck";
 const ROUTE_TEXT = {
 	direct: "A direct connection is likely",
 	relay: "Your call may need to go through a relay",
+	unknown: "Could not tell whether a direct connection is likely",
 };
 
 // "Good / Weak network" on the join screen. Nothing runs until the button is clicked

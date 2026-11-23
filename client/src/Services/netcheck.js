@@ -5,6 +5,7 @@ const PINGS = 5;
 const PING_GAP = 300;
 const PING_TIMEOUT = 2000;
 const ROUTE_TIMEOUT = 5000;
+const SETTLE = 800; // after the first public address: the second STUN server's answer comes within moments
 // The server can be far away, so only an answer this slow (in ms) counts as a weak network
 const SLOW = 800;
 const LIMITED = "limited"; // the server's answer past its limit: says nothing about the network
@@ -22,16 +23,21 @@ const publicAddress = text => {
 	return { at: `${address}:${port}`, base: Number(basePort) ? `${base}:${basePort}` : null };
 };
 
-// "relay" when no STUN server answered, or when one local port got a different public address for each server
+// "relay" when no STUN server answered, or when one local port got a different public address for each server.
+// "unknown" when the browser hid the local port, so the addresses cannot be compared
 const routeFrom = found => {
 	if (!found.length) return "relay";
 	const seen = new Map();
+	let hidden = false;
 	for (const { at, base } of found) {
-		if (!base) continue;
+		if (!base) {
+			hidden = true;
+			continue;
+		}
 		if (seen.has(base) && seen.get(base) !== at) return "relay";
 		seen.set(base, at);
 	}
-	return "direct";
+	return hidden ? "unknown" : "direct";
 };
 
 // Gathers routes on a connection of its own that never connects: the camera and the mic are not involved
@@ -55,7 +61,13 @@ const findRoute = signal => new Promise(resolve => {
 		pc.onicecandidate = e => {
 			if (!e.candidate) return done();
 			const address = publicAddress(e.candidate.candidate);
-			if (address) found.push(address);
+			if (!address) return;
+			found.push(address);
+			if (routeFrom(found) === "relay") return done();
+			if (found.length === 1) {
+				clearTimeout(timer);
+				timer = setTimeout(done, SETTLE);
+			}
 		};
 		pc.createDataChannel("check"); // gives ICE something to gather for
 		pc.createOffer().then(offer => pc.setLocalDescription(offer)).catch(stop);
@@ -83,7 +95,7 @@ const roundTrips = async (socket, signal) => {
 	return times;
 };
 
-// { asked, answered, ms (the middle answer), route ("direct", "relay" or null if unknown), good }, or { limited: true }
+// { asked, answered, ms (the middle answer), route ("direct", "relay", "unknown", or null if not checked), good }, or { limited: true }
 export const checkNetwork = async (socket, signal) => {
 	const [times, route] = await Promise.all([roundTrips(socket, signal), findRoute(signal)]);
 	if (times.includes(LIMITED)) return { limited: true };
