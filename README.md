@@ -49,7 +49,7 @@ Audio, video, chat and files travel directly between the two browsers, or throug
 - **Room-scoped signaling:** call signals reach only the other person in the same room.
 - **Waiting room isolation:** someone waiting receives no signaling, TURN credentials, names or IDs until admitted.
 - **Abuse limits:** per-address limits on connections, joins, room checks and waiting requests.
-- **Private-link verification:** a secret in the meeting link lets the two browsers prove that nobody sits between them.
+- **Private-link verification:** a secret in the meeting link lets a browser check that its connection is with someone who has that link.
 - **No third-party scripts:** all code, styles and fonts are served by the app, under a strict Content Security Policy.
 - **Protected TURN account:** the Xirsys secret stays on the server. Browsers receive only short-lived TURN credentials.
 - **No recording and no user database.**
@@ -145,7 +145,7 @@ flowchart LR
 
 **Problem:** browsers exchange key fingerprints through the signaling server, so a dishonest server could swap them and sit in the middle of a call.
 
-**Solution:** a new meeting link carries a 128-bit secret in its URL fragment, which browsers never send to a server. Each browser reads the certificates DTLS is really using, then sends an HMAC-SHA-256 proof over both fingerprints on the encrypted data channel. A middleman has different certificates and no secret, so the proof fails and the app warns the user. The check relies on the page the browser loaded, and rooms joined by a typed code or an emailed invite stay marked as not verified.
+**Solution:** a new meeting link carries a 128-bit secret in its URL fragment, which browsers never send to a server. Each browser reads the certificates DTLS is really using, then sends an HMAC-SHA-256 proof over both fingerprints on the encrypted data channel. A middleman has different certificates and no secret, so it cannot produce a valid proof. A proof that does not match shows a warning. A proof that never arrives, which a middleman could cause by blocking it, shows "Not verified". Green means only that the other side has the link. The check relies on the page the browser loaded, and rooms joined by a typed code or an emailed invite stay marked as not verified.
 
 **Code:** `client/src/Services/privateCheck.jsx`, `client/src/Services/roomSecret.jsx`
 
