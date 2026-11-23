@@ -13,12 +13,26 @@ const TOO_MANY = "Too many attempts, wait a minute and try again";
 
 const ipOf = value => (typeof value === "string" && isIP(value.trim()) ? value.trim() : null);
 
+// One key per client: IPv4 as it is (also when written as ::ffff:a.b.c.d), IPv6 by its /64, the block one customer gets
+function addressKey(address) {
+  const plain = String(address).split("%")[0];
+  if (isIP(plain) !== 6) return address;
+  const [head, tail] = new URL(`http://[${plain}]`).hostname.slice(1, -1).split("::"); // lower case, no leading zeros, IPv4 part in hex
+  const left = head ? head.split(":") : [], right = tail ? tail.split(":") : [];
+  const groups = [...left, ...Array(8 - left.length - right.length).fill("0"), ...right];
+  if (groups.slice(0, 5).every(g => g === "0") && groups[5] === "ffff") {
+    const [high, low] = [parseInt(groups[6], 16), parseInt(groups[7], 16)];
+    return `${high >> 8}.${high & 255}.${low >> 8}.${low & 255}`;
+  }
+  return `${groups.slice(0, 4).join(":")}::/64`;
+}
+
 // The client's internet address. On Render (which always sets RENDER) every request passes Cloudflare, which
 // overwrites cf-connecting-ip. Anywhere else a client could send that header itself, so it is ignored there.
 // A client can also write anything at the start of x-forwarded-for: only the last entry, added by our own proxy, counts
 function clientAddress(socket) {
   const { "cf-connecting-ip": edgeIp, "x-forwarded-for": forwardedFor } = socket.handshake.headers;
-  return (process.env.RENDER && ipOf(edgeIp)) || (typeof forwardedFor === "string" && ipOf(forwardedFor.split(",").pop())) || socket.handshake.address;
+  return addressKey((process.env.RENDER && ipOf(edgeIp)) || (typeof forwardedFor === "string" && ipOf(forwardedFor.split(",").pop())) || socket.handshake.address);
 }
 
 // A direct connection from this machine (local development, the test suites) is never limited. On the host every

@@ -91,6 +91,7 @@ export const troubleText = (kind, trouble) => {
 		system: `${device} is blocked by your computer`,
 		busy: `${device} is in use by another app`,
 		missing: `No ${device.toLowerCase()} found`,
+		off: `${device} is off`,
 	}[trouble];
 };
 
@@ -100,4 +101,5 @@ export const HELP = {
 	system: () => "Your computer blocks it: System Settings → Privacy & Security → Camera / Microphone → turn on your browser, then reload.",
 	busy: kind => `Close other apps using the ${kind === "video" ? "camera" : "microphone"}, then try again.`,
 	missing: kind => `No ${kind === "video" ? "camera" : "microphone"} found. Connect one, then try again.`,
+	off: kind => `Press the ${kind === "video" ? "camera" : "microphone"} button to turn it back on.`,
 };
