@@ -177,7 +177,7 @@ export const MeetingCard = ({ darkMode, roomId, alone, copied, onCopy, onClose }
 			<div className="hidden [@media(pointer:fine)]:block space-y-1.5 pt-1">
 				<h4 className="font-medium">Keyboard shortcuts</h4>
 				<dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
-					{SHORTCUTS.map(s => (
+					{SHORTCUTS.filter(s => s.action !== "share" || CAN_SHARE_SCREEN).map(s => (
 						<React.Fragment key={s.action}>
 							<dt><kbd className="font-mono text-xs">{keyText(s.action)}</kbd></dt>
 							<dd className="opacity-80">{s.label}</dd>
