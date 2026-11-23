@@ -224,9 +224,10 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 	const selectClass = `w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 ` +
 		(darkMode ? "bg-gray-700 border-gray-600" : "bg-white border-gray-300");
 
-	// Browsers may hold audio until the first click; any click on the preview wakes the meter up
+	// Browsers may hold audio until the first click; any click on the preview wakes the meter up.
+	// Clicking Join closes the meter straight away, and Firefox then rejects the wake-up: nothing to do
 	return (
-		<div className="w-full max-w-4xl flex flex-col md:flex-row gap-6 items-center" onPointerDown={() => audioCtxRef.current?.resume()}>
+		<div className="w-full max-w-4xl flex flex-col md:flex-row gap-6 items-center" onPointerDown={() => audioCtxRef.current?.resume().catch(() => {})}>
 			<div className="relative w-full md:w-3/5 aspect-video bg-black rounded-2xl overflow-hidden shadow-lg border-4 border-gray-700">
 				{/* Shown like a mirror; the other person gets the true picture */}
 				{stream?.getVideoTracks().length > 0 && (
