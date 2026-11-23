@@ -29,6 +29,7 @@ const CONNECT_FAILED = "Could not connect. Reload the page to try again.";
 // The other side answers within a second or two; if no answer arrives by then, it failed on their end
 const CONNECT_TIMEOUT = 20000;
 const CONNECTION_LOST = "Connection lost. Reload the page to try again.";
+const OFFLINE_AFTER = 30000; // as long as the server keeps a seat: we may no longer be in the call and cannot be told
 
 const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	const { roomId } = useParams();
@@ -59,6 +60,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	const [removing, setRemoving] = useState(null); // the socket id the "Remove?" question is about
 	const [admission, setAdmission] = useState("joining"); // joining | asking (the host decides) | empty (nobody to ask) | null: in the room
 	const [requests, setRequests] = useState([]); // host: people asking to join
+	const [offline, setOffline] = useState(false); // no signaling for OFFLINE_AFTER and no call running
 
 	// idle | calling (we sent the offer) | active. Like Google Meet there is no ringing:
 	// once both people are in the room the call connects on its own
@@ -590,6 +592,25 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		return () => stops.forEach(stop => stop());
 	}, [joined, fixDevice]);
 
+	// Long offline with the call down, we may have been removed without hearing it. Nothing stops by itself: a
+	// reconnect must find the devices as they were, so the person gets a button instead
+	useEffect(() => {
+		if (!joined) return;
+		let since = null;
+		const id = setInterval(() => {
+			since = socket.connected ? null : since ?? Date.now();
+			setOffline(since !== null && Date.now() - since >= OFFLINE_AFTER && peer.peer.connectionState !== "connected");
+		}, 1000);
+		return () => clearInterval(id);
+	}, [joined, socket]);
+
+	// Each device goes through its usual "ended" path; its button then turns it back on
+	const turnOffDevices = () => myStreamRef.current?.getTracks().forEach(track => {
+		track.stop();
+		track.onended?.();
+		setTrouble(t => ({ ...t, [track.kind]: "off" }));
+	});
+
 	// Toggle mic on/off
 	const handleToggleMic = () => {
 		if (!myStreamRef.current) return;
@@ -783,6 +804,12 @@ return (
 						{!alone && <ReactionLayer mine className={`absolute z-20 bottom-3 right-3 ${chatOpen ? "w-24" : "w-32"} sm:w-56 aspect-video`} />}
 						{/* Small notices stack here, under what is already at the top (phone status, sharing, "Notify me"), so none covers another */}
 						<div style={{ top: `${1 + 3 * ((!wide && status ? 1 : 0) + (isScreen ? 1 : 0) + (alone ? 1 : 0))}rem` }} className="absolute z-20 inset-x-2 flex flex-col items-center gap-2 pointer-events-none">
+							{offline && (
+								<div role="alert" className="max-w-full px-4 py-2 rounded-2xl bg-amber-500 text-black text-sm font-semibold shadow flex flex-wrap items-center justify-center gap-x-3 gap-y-1 pointer-events-auto">
+									You're offline
+									{(hasCamera || hasMic) && <button type="button" onClick={turnOffDevices} className="underline">Turn off camera and mic</button>}
+								</div>
+							)}
 							<MutedWarning stream={myStream} muted={muted} hint={`press ${keyText("mic")} or the mic button to unmute`} />
 							{paused && (
 								<div role="status" className="max-w-full px-4 py-2 rounded-full bg-amber-500 text-black text-sm font-semibold shadow text-center">
