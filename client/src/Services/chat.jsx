@@ -78,7 +78,7 @@ const attach = (chat, fileChannel) => {
 	fileChannel.binaryType = "arraybuffer";
 	// Chat turns on when the other side's hello arrives, so a browser on an older build without chat
 	// is never sent messages that go nowhere
-	chat.onopen = () => sendJson(chat, { type: "hello", v: 2, me });
+	chat.onopen = () => sendJson(chat, { type: "hello", v: 2, me, clip: 1 });
 	chat.onmessage = e => l === link && onChat(l, e.data);
 	fileChannel.onmessage = e => l === link && (l.ready ? files.message?.(l, e.data) : l.early.length < EARLY_MAX && l.early.push(e.data));
 	chat.onclose = fileChannel.onclose = () => l === link && endLink();
@@ -115,6 +115,7 @@ const onChat = (l, data) => {
 		l.ready = true;
 		l.peer = typeof msg.me === "string" ? msg.me.slice(0, 64) : null;
 		l.version = msg.v;
+		l.clip = msg.clip === 1; // an older build ignores shared clipboard messages
 		// Files need the same version on both sides; chat works with any
 		set({ ready: true, filesOk: msg.v === 2 });
 		files.up?.(l);
@@ -124,6 +125,8 @@ const onChat = (l, data) => {
 		bump();
 	} else if (msg?.type === "reaction" && l.ready && REACTIONS.includes(msg.emoji) && withinRate(reactionTimes.theirs)) {
 		reactionListeners.forEach(listener => listener({ emoji: msg.emoji, mine: false }));
+	} else if (msg?.type === "clip" && l.ready && l.clip) {
+		clip.message?.(l, msg);
 	}
 };
 
@@ -169,3 +172,11 @@ export const sendText = text => {
 	add({ kind: "text", mine: true, text });
 	return true;
 };
+
+// clipboard.jsx: message(link, msg). The open link, and whether the other side can receive shared clips
+let clip = {};
+export const registerClip = hooks => {
+	clip = hooks;
+};
+export const chatLink = () => (link?.ready ? link : null);
+export const clipReady = () => !!link?.ready && link.clip === true;

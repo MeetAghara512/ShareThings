@@ -10,6 +10,7 @@ import CallStatus from "./CallStatus";
 import Preview from "./Preview";
 import ChatPanel, { useChatOpen } from "./ChatPanel";
 import MutedWarning from "./MutedWarning";
+import { FileDropOverlay, useFileDrop } from "./FileDrop";
 import { ReactionLayer } from "./Reactions";
 import { useCallShortcuts, keyText } from "../Services/shortcuts";
 import * as chat from "../Services/chat";
@@ -524,6 +525,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 
 	// While ringing the offer is already applied, but the caller is not shown until we accept
 	const showRemote = remoteStream && callState === "active";
+	const fileDrop = useFileDrop(!!showRemote);
 	// Their shared screen is big and their camera small, until they click the small tile to swap
 	const remoteSharing = showRemote && remoteMedia.screen && remoteScreen;
 	const bigStream = remoteSharing && !swapped ? remoteScreen : remoteStream;
@@ -607,7 +609,8 @@ return (
 				{/* The stage fills the screen above the control bar: the page itself never scrolls. Below lg (phones,
 				    tablets) with the chat open it keeps the top 40% (the chat sits under it, see ChatPanel); dvh follows the keyboard */}
 				<main className={`flex-1 min-h-0 px-2 pt-2 sm:px-4 sm:pt-4 ${chatOpen ? "lg:pr-[26rem] max-lg:order-first max-lg:flex-none max-lg:h-[calc(var(--app-height,100dvh)*0.4)] max-lg:min-h-[160px]" : ""}`}>
-					<div className="relative w-full h-full bg-black rounded-2xl overflow-hidden">
+					<div className="relative w-full h-full bg-black rounded-2xl overflow-hidden" {...fileDrop.handlers}>
+						{fileDrop.over && <FileDropOverlay name={remoteName} />}
 						{/* Their sound plays here, so swapping the videos never cuts it */}
 						{showRemote && <audio autoPlay ref={(a) => a && a.srcObject !== remoteStream && (a.srcObject = remoteStream)} />}
 						{showRemote && (
