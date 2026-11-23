@@ -132,6 +132,10 @@ const ChatPanel = ({ darkMode, remoteName }) => {
 	const fileRef = useRef(null);
 	const socket = useSocket();
 
+	// A waiting clipboard item was meant for this person: the next connection may be someone else
+	useEffect(() => {
+		if (!ready) setPending(null);
+	}, [ready]);
 	useEffect(() => chat.setPeerName(remoteName), [remoteName]);
 	// Only a real departure gets a note; a reconnect also replaces the connection but the call goes on
 	useEffect(() => {
