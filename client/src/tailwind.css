@@ -1,3 +1,37 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  /* Dark is the default, so a dark page never flashes white while the app loads */
+  :root {
+    color-scheme: dark;
+    --ground: 16 18 20;
+    --surface: 25 28 32;
+    --raised: 42 47 54;
+    --line: 46 51 58;
+    --ink: 243 244 241;
+    --muted: 165 172 181;
+    --accent: 184 243 74;
+    --accent-hover: 166 227 55;
+    --accent-ink: 184 243 74;
+    --on-accent: 20 24 11;
+    --danger: 217 58 51;
+    --danger-hover: 194 49 43;
+  }
+
+  .light {
+    color-scheme: light;
+    --ground: 245 246 242;
+    --surface: 255 255 255;
+    --raised: 233 235 230;
+    --line: 217 220 214;
+    --ink: 22 25 28;
+    --muted: 90 97 106;
+    --accent-ink: 75 122 10;
+  }
+
+  html {
+    @apply bg-ground text-ink;
+  }
+}
