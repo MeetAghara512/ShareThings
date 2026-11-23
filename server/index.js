@@ -43,18 +43,23 @@ const MAX_ROOM_SIZE = 2;
 const SEAT_GRACE = 30000;
 // Seats kept for dropped connections: room -> Map(clientId -> { id, name, seat, timer }). Memory only
 const heldSeats = new Map();
-// Who runs each room: room -> { key, away, removed }. key: the host's tab, decided here and never by a client.
-// away: timer while that tab may be reloading. removed: tabs kept out until the room is empty. Memory only
+// Who runs each room: room -> { key, away, removed, denied, waiting }. key: the host's tab, decided here and never by
+// a client. away: timer while that tab may be reloading. removed, denied: tabs kept out until the room is empty.
+// waiting: request id -> { socket, tab, key, resume, ack }, people asking to join. Memory only
 const hosts = new Map();
 const REMOVED = "You were removed from this call.";
 const CANNOT_REMOVE = "You can't remove this person.";
+const DENIED = "You were not let in.";
+const CANNOT_ANSWER = "That request is no longer open.";
+const NO_SEAT = "The call is full.";
+const MAX_WAITING = 5; // people asking to join one room at the same time
 // New on every start, so a client can tell "the server restarted and forgot all seats" from "my seat was given up"
 const SERVER_ID = randomBytes(8).toString("hex");
 
 // Bump when client and server must change together (same number as PROTOCOL_VERSION in
 // client/src/Pages/VersionBanner.jsx). Every new connection is told it, so a tab opened before a deploy
 // can offer a reload
-const PROTOCOL_VERSION = 3;
+const PROTOCOL_VERSION = 4;
 
 // Public identifier of the Google OAuth client (not a secret). Must match GOOGLE_CLIENT_ID in client/src/useContext/AuthProvider.jsx
 const GOOGLE_CLIENT_ID = "123263407226-ltqv9qfv6s58ocr5nvgk2vggoa0addhf.apps.googleusercontent.com";
@@ -139,7 +144,7 @@ const membersOf = room => [...(io.sockets.adapter.rooms.get(room) ?? [])].map(id
 // The first person into an empty room is the host; their tab stays host across a reload or a dropped connection
 function noteHost(room, socket) {
   const host = hosts.get(room);
-  if (!host) hosts.set(room, { key: tabOf(socket), away: null, removed: new Set() });
+  if (!host) hosts.set(room, { key: tabOf(socket), away: null, removed: new Set(), denied: new Set(), waiting: new Map() });
   else if (host.key === tabOf(socket)) {
     clearTimeout(host.away);
     host.away = null;
@@ -157,16 +162,93 @@ function hostMayReturn(room, socket) {
 }
 
 // Someone left. If the host is gone for good, the person still here takes over and is told (someone with a kept
-// seat hears it in their join answer). An empty room forgets its host and who was removed
+// seat hears it in their join answer) and gets the waiting list. An empty room forgets its host and who was removed;
+// anyone still waiting is told, and whoever tries again first becomes the host
 function settleHost(room, leaving) {
   const host = hosts.get(room);
   if (!host || host.away) return;
   const here = membersOf(room).filter(s => s !== leaving);
   const kept = [...(heldSeats.get(room)?.keys() ?? [])];
   if (here.some(s => tabOf(s) === host.key) || kept.includes(host.key)) return;
-  if (!here.length && !kept.length) return hosts.delete(room);
+  if (!here.length && !kept.length) {
+    hosts.delete(room);
+    host.waiting.forEach(request => {
+      request.socket.data.request = null;
+      request.ack({ retry: true });
+    });
+    return;
+  }
   host.key = here.length ? tabOf(here[0]) : kept[0];
   here[0]?.emit("room:host", { room });
+  sendRequests(room);
+}
+
+// The room's host, if this socket is it and is in the room
+const hostFor = (room, socket) => {
+  const host = hosts.get(room);
+  return host && socket.rooms.has(room) && host.key === tabOf(socket) ? host : null;
+};
+
+// The host's list of people asking to join: the name they typed and a random id for the answer, nothing else
+function sendRequests(room) {
+  const host = hosts.get(room);
+  const socket = host && membersOf(room).find(s => tabOf(s) === host.key);
+  socket?.emit("room:requests", { room, requests: [...host.waiting].map(([id, request]) => ({ id, name: request.socket.data.name })) });
+}
+
+// Asked only of someone new: not the first person, the host coming back, or a tab returning to its own seat
+const mustAsk = (room, socket, tab) => {
+  const host = hosts.get(room);
+  return !!host && !socket.rooms.has(room) && !(tab && (tab === host.key || ownsSeat(room, tab)));
+};
+
+// Waits outside the Socket.IO room, so no signaling can reach them, and gets no TURN login. The join answer (ack) is
+// held until the host decides. One request per connection, MAX_WAITING per room; the refusal says nothing about the room
+function askHost(room, socket, tab, resume, ack) {
+  const host = hosts.get(room);
+  const mine = socket.data.request;
+  if (mine && mine.room !== room) return ack({ full: true });
+  const key = tab ?? `socket:${socket.id}`;
+  if (mine) host.waiting.delete(mine.id);
+  for (const [id, request] of host.waiting) {
+    if (request.key !== key) continue; // the same tab on a newer connection replaces its request
+    host.waiting.delete(id);
+    request.socket.data.request = null;
+    request.ack({ full: true });
+  }
+  if (host.waiting.size >= MAX_WAITING) {
+    socket.data.request = null;
+    sendRequests(room);
+    return ack({ full: true });
+  }
+  const id = randomBytes(8).toString("hex");
+  host.waiting.set(id, { socket, tab, key, resume, ack });
+  socket.data.request = { room, id };
+  socket.emit("room:waiting", { room });
+  sendRequests(room);
+}
+
+// Stopped waiting: left, disconnected or went to another room. Gone from the host's list
+function dropRequest(socket) {
+  const { room, id } = socket.data.request ?? {};
+  socket.data.request = null;
+  if (hosts.get(room)?.waiting.delete(id)) sendRequests(room);
+}
+
+async function enterRoom(room, socket, tab, resume, ack) {
+  const resumed = takeSeat(room, socket, tab, resume);
+  socket.join(room);
+  noteHost(room, socket);
+
+  const iceServers = await getIceServers();
+  if (!socket.rooms.has(room)) return; // left or disconnected while waiting
+  const peerId = [...io.sockets.adapter.rooms.get(room)].find(id => id !== socket.id) ?? null;
+  const peerName = io.sockets.sockets.get(peerId)?.data.name ?? null;
+  const peerSeat = io.sockets.sockets.get(peerId)?.data.seat ?? null;
+  const isHost = hosts.get(room)?.key === tabOf(socket);
+  ack({ peerId, peerName, peerSeat, peerHeld: heldSeats.has(room), resumed, host: isHost, server: SERVER_ID, iceServers });
+  socket.to(room).emit("user:joined", { id: socket.id, name: socket.data.name, seat: socket.data.seat });
+  if (isHost) sendRequests(room);
 }
 
 io.on("connection", socket => {
@@ -191,22 +273,16 @@ io.on("connection", socket => {
     if (typeof room !== "string" || !room || typeof ack !== "function") return;
     // Every socket also sits in a room named after its own id; joining one of those would put a stranger "in the same room"
     if (io.sockets.sockets.has(room)) return ack({ full: true });
-    if (hosts.get(room)?.removed.has(validClientId(clientId))) return ack({ full: true, removed: true, error: REMOVED });
+    const key = validClientId(clientId) ?? `socket:${socket.id}`;
+    if (hosts.get(room)?.removed.has(key)) return ack({ full: true, removed: true, error: REMOVED });
+    if (hosts.get(room)?.denied.has(key)) return ack({ full: true, denied: true, error: DENIED });
     // Display name shown to the other member: plain text, at most 40 characters
     socket.data.name = (typeof name === "string" && name.trim().slice(0, 40).trim()) || "Guest";
     const tab = validClientId(clientId);
     if (othersInRoom(room, socket, tab).length >= MAX_ROOM_SIZE) return ack({ full: true });
-    const resumed = takeSeat(room, socket, tab, resume === true);
-    socket.join(room);
-    noteHost(room, socket);
-
-    const iceServers = await getIceServers();
-    if (!socket.rooms.has(room)) return; // left or disconnected while waiting
-    const peerId = [...io.sockets.adapter.rooms.get(room)].find(id => id !== socket.id) ?? null;
-    const peerName = io.sockets.sockets.get(peerId)?.data.name ?? null;
-    const peerSeat = io.sockets.sockets.get(peerId)?.data.seat ?? null;
-    ack({ peerId, peerName, peerSeat, peerHeld: heldSeats.has(room), resumed, host: hosts.get(room)?.key === tabOf(socket), server: SERVER_ID, iceServers });
-    socket.to(room).emit("user:joined", { id: socket.id, name: socket.data.name, seat: socket.data.seat });
+    if (mustAsk(room, socket, tab)) return askHost(room, socket, tab, resume === true, ack);
+    dropRequest(socket);
+    await enterRoom(room, socket, tab, resume === true, ack);
   });
 
   // Call signaling only ever goes to the other person in the same room: never to a room name, never to a stranger.
@@ -264,6 +340,7 @@ io.on("connection", socket => {
 
   // closing: the tab is closing or reloading, so a host may be back in a moment
   socket.on("room:leave", ({ room, closing }) => {
+    if (socket.data.request?.room === room) dropRequest(socket);
     if (room === socket.id || !socket.rooms.has(room)) return;
     socket.to(room).emit("user:left", { id: socket.id });
     if (closing === true) hostMayReturn(room, socket);
@@ -275,8 +352,8 @@ io.on("connection", socket => {
   // The same answer for every refusal. Their tab stays out until the room is empty
   socket.on("room:remove", ({ room, to }, ack) => {
     if (typeof ack !== "function") return;
-    const host = hosts.get(room);
-    if (!host || !socket.rooms.has(room) || host.key !== tabOf(socket)) return ack({ error: CANNOT_REMOVE });
+    const host = hostFor(room, socket);
+    if (!host) return ack({ error: CANNOT_REMOVE });
     const member = membersOf(room).find(s => s.id === to);
     const held = [...(heldSeats.get(room) ?? [])].find(([, seat]) => seat.id === to);
     const tab = member ? tabOf(member) : held?.[0];
@@ -291,7 +368,35 @@ io.on("connection", socket => {
     socket.emit("user:left", { id: to });
   });
 
+  // Only the room's current host can answer someone waiting; admitting needs a free seat
+  socket.on("room:admit", ({ room, id }, ack) => {
+    if (typeof ack !== "function") return;
+    const host = hostFor(room, socket);
+    const request = host?.waiting.get(id);
+    if (!request) return ack({ error: CANNOT_ANSWER });
+    if (othersInRoom(room, request.socket, request.tab).length >= MAX_ROOM_SIZE) return ack({ error: NO_SEAT });
+    host.waiting.delete(id);
+    request.socket.data.request = null;
+    sendRequests(room);
+    ack({ ok: true });
+    enterRoom(room, request.socket, request.tab, request.resume, request.ack);
+  });
+
+  socket.on("room:deny", ({ room, id }, ack) => {
+    if (typeof ack !== "function") return;
+    const host = hostFor(room, socket);
+    const request = host?.waiting.get(id);
+    if (!request) return ack({ error: CANNOT_ANSWER });
+    host.waiting.delete(id);
+    host.denied.add(request.key);
+    request.socket.data.request = null;
+    request.ack({ full: true, denied: true, error: DENIED });
+    sendRequests(room);
+    ack({ ok: true });
+  });
+
   socket.on("disconnecting", reason => {
+    dropRequest(socket);
     socket.rooms.forEach(room => {
       if (room === socket.id) return;
       if (!holdSeat(room, socket, reason)) socket.to(room).emit("user:left", { id: socket.id });

@@ -18,6 +18,7 @@ import { useAdaptiveQuality } from "../Services/quality";
 import { setCallTitle } from "../Services/title";
 import { noticeJoin } from "../Services/notify";
 import JoinNotice from "./JoinNotice";
+import JoinRequests from "./JoinRequests";
 
 // What the other side last told us about their camera, mic and shared screen (has*: there is a device at all)
 const MEDIA_ON = { video: true, audio: true, screen: false, hasCamera: true, hasMic: true, paused: false };
@@ -52,6 +53,8 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	const [help, setHelp] = useState(null); // the device whose fix is shown
 	const [isHost, setIsHost] = useState(false); // only the server decides; it can remove the other person
 	const [removing, setRemoving] = useState(null); // the socket id the "Remove?" question is about
+	const [admission, setAdmission] = useState("joining"); // joining | asking (the host decides) | empty (nobody to ask) | null: in the room
+	const [requests, setRequests] = useState([]); // host: people asking to join
 
 	// idle | calling (we sent the offer) | active. Like Google Meet there is no ringing:
 	// once both people are in the room the call connects on its own
@@ -69,6 +72,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	const connectTimerRef = useRef(null);
 	const remoteSeatRef = useRef(null); // the other person's seat: the same when their connection drops and comes back
 	const serverRef = useRef(null); // which run of the server we joined, to notice a restart
+	const askedRef = useRef(new Set()); // requests the host was already notified of
 	const troubleRef = useRef(trouble);
 	troubleRef.current = trouble;
 	const aloneRef = useRef(true); // for the join notification: only when someone arrives while we wait alone
@@ -96,21 +100,22 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		}
 	};
 
-	// The host removed us: camera, mic, screen and connection stop now, and the server keeps this tab out
-	const handleRemoved = useCallback(() => {
+	// The host removed us or did not let us in: camera, mic, screen and connection stop now, and the server keeps this tab out
+	const handleRemoved = useCallback((reason = "removed") => {
 		recovery.stop();
 		clearTimeout(connectTimerRef.current);
 		myStreamRef.current?.getTracks().forEach(t => t.stop());
 		myStreamRef.current = null;
 		screenTrackRef.current?.stop();
 		peer.reset();
-		navigate(`/left/${encodeURIComponent(roomId)}`, { replace: true, state: { reason: "removed" } });
+		navigate(`/left/${encodeURIComponent(roomId)}`, { replace: true, state: { reason } });
 	}, [navigate, roomId]);
 
 	// Join the room; the server replies with who is already there and the ICE servers to use
 	const joinRoom = useCallback(() => {
-		socket.emit("room:join", { room: roomId, name: myName, clientId: clientId() }, ({ full, removed, error, peerId, peerName, peerSeat, host, server, iceServers }) => {
-			if (removed) return handleRemoved();
+		socket.emit("room:join", { room: roomId, name: myName, clientId: clientId() }, ({ full, removed, denied, retry, error, peerId, peerName, peerSeat, host, server, iceServers }) => {
+			if (retry) return setAdmission("empty");
+			if (removed || denied) return handleRemoved(denied ? "denied" : "removed");
 			if (full) {
 				alert(error || "This room is full."); // error: too many attempts from this internet address
 				return navigate("/");
@@ -119,6 +124,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 			serverRef.current = server;
 			remoteSeatRef.current = peerSeat;
 			setIsHost(host === true);
+			setAdmission(null);
 			// A call can start before this reply arrives (someone left and came straight back): keep its connection
 			if (callStateRef.current === "idle") peer.reset(iceServers);
 			setRemoteSocketId(peerId);
@@ -380,13 +386,15 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		// What we sent while offline waits in Socket.IO's buffer. The server only relays between people in the
 		// same room, so the rejoin has to reach it first
 		const queued = socket.sendBuffer.splice(0);
-		socket.emit("room:join", { room: roomId, name: myName, clientId: clientId(), resume: true }, ({ full, removed, error, peerId, peerName, peerSeat, peerHeld, resumed, host, server, iceServers }) => {
-			if (removed) return handleRemoved();
+		socket.emit("room:join", { room: roomId, name: myName, clientId: clientId(), resume: true }, ({ full, removed, denied, retry, error, peerId, peerName, peerSeat, peerHeld, resumed, host, server, iceServers }) => {
+			if (retry) return rejoinRoom(); // nobody left to ask: the room is ours now
+			if (removed || denied) return handleRemoved(denied ? "denied" : "removed");
 			if (full) {
 				alert(error || "This room is full.");
 				return navigate("/");
 			}
 			setIsHost(host === true);
+			setAdmission(null);
 			const restarted = server !== serverRef.current;
 			serverRef.current = server;
 			iceServersRef.current = iceServers;
@@ -435,18 +443,40 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		return () => window.removeEventListener("pagehide", leave);
 	}, [joined, socket, roomId]);
 
-	// The host removed us, or the host left and we take over
+	// The host removed us, the host left and we take over, we wait to be let in, or (host) who is waiting
 	useEffect(() => {
 		if (!joined) return;
 		const onRemoved = ({ room }) => room === roomId && handleRemoved();
 		const onHost = ({ room }) => room === roomId && setIsHost(true);
+		// A call that is still running (its signaling came back after a server restart) stays on screen while asking
+		const onWaiting = ({ room }) => {
+			if (room !== roomId || peer.peer.connectionState === "connected") return;
+			recovery.stop();
+			resetCall();
+			autoCalledRef.current = null;
+			setRemoteSocketId(null);
+			setRemoteName(null);
+			setAdmission("asking");
+		};
+		const onRequests = ({ room, requests: list }) => {
+			if (room !== roomId || !Array.isArray(list)) return;
+			setRequests(list);
+			list.filter(r => !askedRef.current.has(r.id)).forEach(r => {
+				askedRef.current.add(r.id);
+				noticeJoin(r.name, "wants to join");
+			});
+		};
 		socket.on("room:removed", onRemoved);
 		socket.on("room:host", onHost);
+		socket.on("room:waiting", onWaiting);
+		socket.on("room:requests", onRequests);
 		return () => {
 			socket.off("room:removed", onRemoved);
 			socket.off("room:host", onHost);
+			socket.off("room:waiting", onWaiting);
+			socket.off("room:requests", onRequests);
 		};
-	}, [joined, socket, roomId, handleRemoved]);
+	}, [joined, socket, roomId, handleRemoved, resetCall]);
 
 	// Socket events, once joined (a reconnect while on the preview must not join the room)
 	useEffect(() => {
@@ -480,6 +510,9 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		chat.forgetPeer();
 		handleUserLeft();
 	};
+
+	// Host: let someone in or not. The server checks that we are the host and that a seat is free
+	const answerRequest = (event, id) => socket.emit(event, { room: roomId, id }, ({ error }) => error && alert(error));
 
 	// The screen goes in its own lane next to the camera, so the camera and mic keep running.
 	// While waiting alone there is no lane yet: setupMedia puts the screen on the next call
@@ -742,7 +775,7 @@ return (
 						{help && deviceTrouble[help] && (
 							<DeviceHelp kind={help} trouble={deviceTrouble[help]} darkMode={darkMode} onClose={() => setHelp(null)} className="absolute z-30 bottom-3 left-1/2 -translate-x-1/2 w-[min(24rem,calc(100%-1.5rem))]" />
 						)}
-						{alone && <JoinNotice className={`absolute ${isScreen ? "top-16" : "top-4"} left-1/2 -translate-x-1/2 z-10`} />}
+						{alone && !admission && <JoinNotice className={`absolute ${isScreen ? "top-16" : "top-4"} left-1/2 -translate-x-1/2 z-10`} />}
 						{isHost && removing && removing === remoteSocketId && (
 							<div className="absolute inset-0 z-40 flex items-center justify-center p-4 bg-black/60" onKeyDown={e => e.key === "Escape" && setRemoving(null)}>
 								<div role="alertdialog" aria-modal="true" aria-label="Remove from the call" className={`w-full max-w-xs max-h-full overflow-y-auto p-4 rounded-xl shadow-2xl space-y-4 text-center ${darkMode ? "bg-gray-800 text-gray-100" : "bg-white text-gray-900"}`}>
@@ -754,7 +787,20 @@ return (
 								</div>
 							</div>
 						)}
-						{infoOpen && (
+						{alone && (admission === "asking" || admission === "empty") && (
+							<div role="status" className="absolute inset-0 z-20 flex items-center justify-center p-4 pointer-events-none">
+								<div className="max-w-xs px-5 py-4 rounded-xl bg-black/75 text-white text-center space-y-3 pointer-events-auto">
+									<p className={`font-semibold ${admission === "asking" ? "animate-pulse" : ""}`}>{admission === "asking" ? "Asking to join\u2026" : "Nobody is in the call right now"}</p>
+									{admission === "asking" ? (
+										<p className="text-sm opacity-80">You'll join when someone in the call lets you in.</p>
+									) : (
+										<button type="button" onClick={() => { setAdmission("joining"); joinRoom(); }} className="px-4 py-2 rounded-full bg-indigo-600 hover:bg-indigo-700 font-semibold">Join now</button>
+									)}
+								</div>
+							</div>
+						)}
+						{isHost && <JoinRequests requests={requests} darkMode={darkMode} onAdmit={id => answerRequest("room:admit", id)} onDeny={id => answerRequest("room:deny", id)} />}
+						{infoOpen && !admission && (
 							<MeetingCard darkMode={darkMode} roomId={roomId} alone={alone} copied={copied} onCopy={handleCopyLink} onClose={() => setInfoOpen(false)} />
 						)}
 					</div>
