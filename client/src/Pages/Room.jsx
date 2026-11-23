@@ -10,11 +10,10 @@ import CallStatus from "./CallStatus";
 import Preview from "./Preview";
 import ChatPanel, { useChatOpen } from "./ChatPanel";
 import ControlBar, { DeviceHelp, MeetingCard } from "./ControlBar";
+import { useAdaptiveQuality } from "../Services/quality";
 
 // What the other side last told us about their camera, mic and shared screen (has*: there is a device at all)
-const MEDIA_ON = { video: true, audio: true, screen: false, hasCamera: true, hasMic: true };
-// While the screen is shared the camera only fills a small tile, so the screen gets the bandwidth
-const CAMERA_WHILE_SHARING = { maxBitrate: 150000, scaleResolutionDownBy: 2 };
+const MEDIA_ON = { video: true, audio: true, screen: false, hasCamera: true, hasMic: true, paused: false };
 const CONNECT_FAILED = "Could not connect. Reload the page to try again.";
 // The other side answers within a second or two; if no answer arrives by then, it failed on their end
 const CONNECT_TIMEOUT = 20000;
@@ -146,18 +145,17 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	// Tell the other side whether we have a camera and a mic, whether they are on and whether we share our screen
 	const hasCamera = !!myStream?.getVideoTracks().length;
 	const hasMic = !!myStream?.getAudioTracks().length;
-	useEffect(() => {
-		if (callStart && remoteSocketId) socket.emit("media:state", { to: remoteSocketId, video: hasCamera && !cameraOff, audio: hasMic && !muted, screen: isScreen, hasCamera, hasMic });
-	}, [socket, remoteSocketId, callStart, cameraOff, muted, isScreen, hasCamera, hasMic]);
 
-	// Shrink the camera while sharing and restore it afterwards (also on a call that starts mid-share)
+	// Video sized to the other screen, the camera smaller while we share, stepped down (or paused) on a weak network
+	const { mode: qualityMode, setMode: setQualityMode, paused, onStats } = useAdaptiveQuality({
+		socket, remoteSocketId, callStart, remoteStream, remoteScreen, isScreen,
+		layout: `${remoteMedia.screen}-${swapped}-${chatOpen}-${callState}`,
+		cameraTrack: myStream?.getVideoTracks()[0], cameraOn: hasCamera && !cameraOff,
+	});
+
 	useEffect(() => {
-		const camera = callStart && peer.peer.getSenders().find(s => s.track && s.track === myStreamRef.current?.getVideoTracks()[0]);
-		const params = camera?.getParameters();
-		if (!params?.encodings?.length) return;
-		Object.assign(params.encodings[0], isScreen ? CAMERA_WHILE_SHARING : { maxBitrate: undefined, scaleResolutionDownBy: 1 });
-		camera.setParameters(params).catch(e => console.error("Camera quality could not be changed", e));
-	}, [callStart, isScreen]);
+		if (callStart && remoteSocketId) socket.emit("media:state", { to: remoteSocketId, video: hasCamera && !cameraOff, audio: hasMic && !muted, screen: isScreen, hasCamera, hasMic, paused });
+	}, [socket, remoteSocketId, callStart, cameraOff, muted, isScreen, hasCamera, hasMic, paused]);
 
 	const handleUserJoined = useCallback(({ id, name, seat }) => {
 		remoteSeatRef.current = seat ?? null;
@@ -293,8 +291,8 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		peer.peer.addIceCandidate(candidate).catch(e => console.error("ICE candidate failed", e));
 	}, []);
 
-	const handleMediaState = useCallback(({ video, audio, screen, hasCamera, hasMic }) => {
-		setRemoteMedia({ video: video !== false, audio: audio !== false, screen: screen === true, hasCamera: hasCamera !== false, hasMic: hasMic !== false });
+	const handleMediaState = useCallback(({ video, audio, screen, hasCamera, hasMic, paused }) => {
+		setRemoteMedia({ video: video !== false, audio: audio !== false, screen: screen === true, hasCamera: hasCamera !== false, hasMic: hasMic !== false, paused: paused === true });
 		if (screen !== true) setSwapped(false); // their next share starts with the screen big again
 	}, []);
 
@@ -531,7 +529,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		query.addEventListener("change", update);
 		return () => query.removeEventListener("change", update);
 	}, []);
-	const status = callStart && <CallStatus connection={peer.peer} since={callStart} reconnecting={reconnecting} />;
+	const status = callStart && <CallStatus connection={peer.peer} since={callStart} reconnecting={reconnecting} onStats={onStats} />;
 
 	// iPhone Safari lays the keyboard over the page and leaves dvh as it was (it ignores interactive-widget), so
 	// the chat input and the video would end up under the keyboard or panned away. While the visible part of the
@@ -595,10 +593,10 @@ return (
 								ref={(v) => v && v.srcObject !== bigStream && (v.srcObject = bigStream)}
 							/>
 						)}
-						{showRemote && !remoteMedia.video && bigStream === remoteStream && (
-							<div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-zinc-800 text-gray-300">
+						{showRemote && (!remoteMedia.video || remoteMedia.paused) && bigStream === remoteStream && (
+							<div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-6 text-center bg-zinc-800 text-gray-300">
 								{remoteMedia.hasCamera ? <FaVideoSlash size={40} /> : avatar(remoteName, "w-24 h-24 text-4xl")}
-								<span>{remoteMedia.hasCamera ? "Camera off" : `${remoteName || "They"} has no camera`}</span>
+								<span>{remoteMedia.paused ? `${remoteName || "Their"}'s video is paused: weak connection` : remoteMedia.hasCamera ? "Camera off" : `${remoteName || "They"} has no camera`}</span>
 							</div>
 						)}
 						{showRemote && (remoteName || !remoteMedia.audio) && (
@@ -622,7 +620,7 @@ return (
 									className={`w-full h-full ${smallStream === remoteStream ? "object-cover" : "object-contain"}`}
 									ref={(v) => v && v.srcObject !== smallStream && (v.srcObject = smallStream)}
 								/>
-								{smallStream === remoteStream && !remoteMedia.video && (
+								{smallStream === remoteStream && (!remoteMedia.video || remoteMedia.paused) && (
 									<div className="absolute inset-0 flex items-center justify-center bg-zinc-800 text-gray-300">
 										{remoteMedia.hasCamera ? <FaVideoSlash size={24} /> : avatar(remoteName, "w-12 h-12 text-xl")}
 									</div>
@@ -664,6 +662,11 @@ return (
 								<FaDesktop className="shrink-0" /> You are sharing your screen
 							</div>
 						)}
+						{paused && (
+							<div role="status" className={`absolute ${isScreen ? "top-16" : "top-4"} left-1/2 -translate-x-1/2 z-10 max-w-[calc(100%-2rem)] px-4 py-2 rounded-full bg-amber-500 text-black text-sm font-semibold shadow text-center`}>
+								Weak connection — video paused, audio continues
+							</div>
+						)}
 						{help && deviceTrouble[help] && (
 							<DeviceHelp kind={help} trouble={deviceTrouble[help]} darkMode={darkMode} onClose={() => setHelp(null)} className="absolute z-30 bottom-3 left-1/2 -translate-x-1/2 w-[min(24rem,calc(100%-1.5rem))]" />
 						)}
@@ -686,6 +689,8 @@ return (
 					onToggleShare={isScreen ? stopShare : startShare}
 					onToggleInfo={() => setInfoOpen(!infoOpen)}
 					onToggleDarkMode={toggleDarkMode}
+					quality={qualityMode}
+					onQuality={setQualityMode}
 					onLeave={handleCutCall}
 				/>
 				<ChatPanel darkMode={darkMode} remoteName={remoteName} />

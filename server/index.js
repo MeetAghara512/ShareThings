@@ -182,9 +182,15 @@ io.on("connection", socket => {
   socket.on("ice:candidate", ({ to, candidate }) => {
     if (inSameRoom(to)) io.to(to).emit("ice:candidate", { from: socket.id, candidate });
   });
-  // Camera / mic on or off (or missing) and screen shared or not, so the other side can show a placeholder, a muted icon and the screen
-  socket.on("media:state", ({ to, video, audio, screen, hasCamera, hasMic }) => {
-    if (inSameRoom(to)) io.to(to).emit("media:state", { from: socket.id, video: video !== false, audio: audio !== false, screen: screen === true, hasCamera: hasCamera !== false, hasMic: hasMic !== false });
+  // Camera / mic on or off (or missing), screen shared or not, camera paused by a weak network: the other side shows a placeholder, a muted icon or the screen
+  socket.on("media:state", ({ to, video, audio, screen, hasCamera, hasMic, paused }) => {
+    if (inSameRoom(to)) io.to(to).emit("media:state", { from: socket.id, video: video !== false, audio: audio !== false, screen: screen === true, hasCamera: hasCamera !== false, hasMic: hasMic !== false, paused: paused === true });
+  });
+  // How large this side shows the other person's camera and screen, and its quality setting, so the sender never
+  // sends much more than is shown (see client/src/Services/quality.js)
+  socket.on("view:size", ({ to, camera, screen, mode }) => {
+    const size = s => (s && Number.isFinite(s.width) && Number.isFinite(s.height) ? { width: Math.min(8192, Math.max(0, Math.round(s.width))), height: Math.min(8192, Math.max(0, Math.round(s.height))) } : null);
+    if (inSameRoom(to)) io.to(to).emit("view:size", { from: socket.id, camera: size(camera), screen: size(screen), mode: ["auto", "high", "saver"].includes(mode) ? mode : "auto" });
   });
 
   // Email the room link to a guest; see invite.js for the rules
