@@ -48,6 +48,7 @@ const readStats = report => {
 const CallStatus = ({ connection, since, reconnecting, onStats }) => {
 	const [now, setNow] = useState(Date.now);
 	const [quality, setQuality] = useState(null);
+	const [theirs, setTheirs] = useState(false); // our side is better than the rating: it is their video that arrives badly
 	const onStatsRef = useRef(onStats);
 	onStatsRef.current = reconnecting ? null : onStats; // a dropped connection is handled by the reconnect, not by lowering video
 
@@ -75,6 +76,7 @@ const CallStatus = ({ connection, since, reconnecting, onStats }) => {
 			if (stats.rtt === undefined) return;
 			const rated = rateQuality(stats.rtt, loss);
 			setQuality(rated);
+			setTheirs(QUALITY[rateQuality(stats.rtt, stats.sentLoss)].bars > QUALITY[rated].bars);
 			setCallStats({ quality: rated, relay: stats.relay, bitrate: stats.bitrate }); // files slow down when Poor
 			onStatsRef.current?.({ quality: rated, rtt: stats.rtt, loss, sentLoss: stats.sentLoss, sentBytes: stats.sentBytes, at: Date.now() });
 		}, 2000);
@@ -92,13 +94,13 @@ const CallStatus = ({ connection, since, reconnecting, onStats }) => {
 			{reconnecting ? (
 				<span className="text-yellow-500 animate-pulse">Reconnecting...</span>
 			) : q && (
-				<span className="flex items-center gap-1.5" title={`${q.text} connection`}>
+				<span className="flex items-center gap-1.5" title={theirs ? "Their video is weak" : `${q.text} connection`}>
 					<span className="flex items-end gap-0.5 h-3">
 						{[1, 2, 3].map(n => (
 							<span key={n} className={`w-1 rounded-sm ${n <= q.bars ? q.color : "bg-gray-400/40"}`} style={{ height: `${n * 33}%` }} />
 						))}
 					</span>
-					{q.text}
+					{theirs ? "Their video is weak" : q.text}
 				</span>
 			)}
 		</div>
