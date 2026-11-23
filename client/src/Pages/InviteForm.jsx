@@ -77,6 +77,8 @@ const InviteForm = ({ roomId, darkMode }) => {
 			{status && (
 				<p role="status" className={`text-center ${status.ok ? "text-green-500" : "text-red-500"}`}>
 					{status.text}
+					{/* New senders often land in Spam at first */}
+					{status.ok && <span className="block mt-0.5 text-xs opacity-80">If it doesn't arrive in a minute, ask them to check Spam.</span>}
 				</p>
 			)}
 		</form>
