@@ -29,6 +29,7 @@ export const allowJoinNotice = async () => {
 // Two quiet sine notes, rising
 const chime = () => {
 	audio ??= new AudioContext();
+	audio.resume().catch(() => {});
 	const now = audio.currentTime;
 	for (const [frequency, at] of [[660, 0], [880, 0.16]]) {
 		const tone = audio.createOscillator();
@@ -45,9 +46,11 @@ const chime = () => {
 };
 
 export const noticeJoin = (name, what = "joined your call") => {
-	if (!document.hidden || notifyPermission() !== "granted") return;
+	// Android Chrome cannot show a page notification: whoever allowed them still gets the chime
+	if (!document.hidden || globalThis.Notification?.permission !== "granted") return;
 	try {
 		chime();
+		if (notifyPermission() !== "granted") return;
 		const notice = new Notification(`${name || "Someone"} ${what}`, { icon: "/icon.svg", tag: "sharethings-join" });
 		notice.onclick = () => {
 			window.focus();
