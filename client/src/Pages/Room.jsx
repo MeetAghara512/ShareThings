@@ -868,12 +868,12 @@ return (
 						{(status || (showRemote && (remoteName || !remoteMedia.audio))) && (
 							<div className={`absolute top-3 left-3 z-10 flex ${belowTile ? "flex-wrap" : ""} items-center gap-2 text-white text-xs sm:text-sm ${remoteSharing ? "max-w-[calc(100%-11.25rem)] sm:max-w-[calc(100%-14.25rem)]" : "max-w-[calc(100%-1.5rem)]"}`}>
 								{showRemote && (remoteName || !remoteMedia.audio) && (
-									<span className="min-w-0 max-w-[12rem] h-9 px-3 flex items-center gap-1.5 rounded-xl bg-black/75 font-medium">
+									<span className="min-w-0 sm:max-w-[12rem] h-9 px-3 flex items-center gap-1.5 rounded-xl bg-black/75 font-medium">
 										{!remoteMedia.audio && <FaMicrophoneSlash className="shrink-0 text-red-400" title={remoteMedia.hasMic ? "Muted" : "No microphone"} />}
 										<span className="truncate">{remoteName}</span>
 									</span>
 								)}
-								{status && <div className="min-w-0 h-9 px-3 flex items-center rounded-xl bg-black/75">{status}</div>}
+								{status && <div className="shrink-0 max-w-full overflow-hidden h-9 px-3 flex items-center rounded-xl bg-black/75">{status}</div>}
 							</div>
 						)}
 						{isScreen && (
