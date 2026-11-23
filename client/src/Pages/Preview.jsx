@@ -7,6 +7,7 @@ import { useSocket, useSocketStatus } from "../useContext/SocketProvider";
 import { useAuth } from "../useContext/AuthProvider";
 import ServerStatus from "./ServerStatus";
 import NetworkCheck from "./NetworkCheck";
+import { pickSpeaker, refreshSpeakers, useSpeaker } from "./Speaker";
 
 // Devices picked and name used on this browser
 const CAMERA_KEY = "sharethings.camera";
@@ -36,6 +37,7 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 	const [devices, setDevices] = useState({ video: [], audio: [] });
 	const [videoId, setVideoId] = useState(() => localStorage.getItem(CAMERA_KEY) || "");
 	const [audioId, setAudioId] = useState(() => localStorage.getItem(MIC_KEY) || "");
+	const { speakers, id: speakerId } = useSpeaker();
 	const [cameraOff, setCameraOff] = useState(false);
 	const [muted, setMuted] = useState(false);
 	const [name, setName] = useState(() => localStorage.getItem(NAME_KEY) || user?.name || "");
@@ -58,6 +60,7 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 			video: list.filter(d => d.kind === "videoinput" && d.deviceId),
 			audio: list.filter(d => d.kind === "audioinput" && d.deviceId),
 		});
+		refreshSpeakers();
 	}, []);
 
 	const start = useCallback(async (video, audio) => {
@@ -355,6 +358,14 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 						<span className="block font-medium">Microphone</span>
 						<select value={audioId} onChange={e => pickMic(e.target.value)} className={selectClass}>
 							{devices.audio.map((d, i) => <option key={d.deviceId} value={d.deviceId}>{d.label || `Microphone ${i + 1}`}</option>)}
+						</select>
+					</label>
+				)}
+				{speakers.length > 0 && (
+					<label className="block space-y-1 text-sm">
+						<span className="block font-medium">Speaker</span>
+						<select value={speakerId} onChange={e => pickSpeaker(e.target.value)} className={selectClass}>
+							{speakers.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
 						</select>
 					</label>
 				)}
