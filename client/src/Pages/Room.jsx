@@ -713,6 +713,9 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		query.addEventListener("change", update);
 		return () => query.removeEventListener("change", update);
 	}, []);
+	// Below the small swap tile (top right) where the stage is too narrow for both side by side
+	const belowTile = !wide && remoteSharing ? 8 : 0;
+	const joinRequests = isHost && <JoinRequests requests={requests} darkMode={darkMode} inline={!wide} tile={!!remoteSharing} onAdmit={id => answerRequest("room:admit", id)} onDeny={id => answerRequest("room:deny", id)} />;
 	const status = callStart && (
 		<div className="flex items-center gap-3 min-w-0">
 			<PrivacyShield remoteName={remoteName} darkMode={darkMode} />
@@ -849,25 +852,27 @@ return (
 							</div>
 						)}
 						{!wide && status && (
-							<div className="absolute top-3 left-3 z-10 px-2 py-1 rounded bg-black/60 text-white text-xs">{status}</div>
+							<div className={`absolute top-3 left-3 z-10 px-2 py-1 rounded bg-black/60 text-white text-xs ${remoteSharing ? "max-w-[calc(100%-11.25rem)] sm:max-w-[calc(100%-14.25rem)]" : ""}`}>{status}</div>
 						)}
 						{isScreen && (
-							<div className={`absolute ${!wide && status ? "top-16" : "top-4"} left-1/2 -translate-x-1/2 z-10 max-w-[calc(100%-2rem)] px-4 py-2 rounded-full bg-indigo-600 text-white text-sm font-semibold shadow flex items-center gap-2 whitespace-nowrap`}>
+							<div style={belowTile ? { top: `${belowTile}rem` } : undefined} className={`absolute ${!wide && status ? "top-16" : "top-4"} left-1/2 -translate-x-1/2 z-10 max-w-[calc(100%-2rem)] px-4 py-2 rounded-full bg-indigo-600 text-white text-sm font-semibold shadow flex items-center gap-2 whitespace-nowrap`}>
 								<FaDesktop className="shrink-0" /> You are sharing your screen
 							</div>
 						)}
 						{/* Reactions float up over the sender: theirs above their name, yours above your own tile */}
 						{showRemote && <ReactionLayer mine={false} className="absolute z-20 bottom-12 left-4 w-24 h-0" />}
 						{!alone && <ReactionLayer mine className={`absolute z-20 bottom-3 right-3 ${chatOpen ? "w-24" : "w-32"} sm:w-56 aspect-video`} />}
-						{/* Small notices stack here, under what is already at the top (phone status, sharing, "Notify me"), so none covers another */}
-						<div style={{ top: `${1 + 3 * ((!wide && status ? 1 : 0) + (isScreen ? 1 : 0) + (alone ? 1 : 0))}rem` }} className="absolute z-20 inset-x-2 flex flex-col items-center gap-2 pointer-events-none">
+						{/* Small notices stack here, under what is already at the top (phone status, sharing), so none covers another */}
+						<div style={{ top: `${Math.max(belowTile + (isScreen ? 3 : 0), 1 + 3 * ((!wide && status ? 1 : 0) + (isScreen ? 1 : 0)))}rem` }} className="absolute z-30 inset-x-2 bottom-2 flex flex-col items-center gap-2 pointer-events-none">
+							{alone && !admission && <JoinNotice className="pointer-events-auto" />}
 							{offline && (
 								<div role="alert" className="max-w-full px-4 py-2 rounded-2xl bg-amber-500 text-black text-sm font-semibold shadow flex flex-wrap items-center justify-center gap-x-3 gap-y-1 pointer-events-auto">
 									You're offline
 									{(hasCamera || hasMic) && <button type="button" onClick={turnOffDevices} className="underline">Turn off camera and mic</button>}
 								</div>
 							)}
-							<MutedWarning stream={myStream} muted={muted} hint={`press ${keyText("mic")} or the mic button to unmute`} />
+							{!wide && joinRequests}
+							<MutedWarning stream={myStream} muted={muted} hint={window.matchMedia("(pointer: fine)").matches ? `press ${keyText("mic")} or the mic button to unmute` : "tap the mic button to unmute"} />
 							{paused && (
 								<div role="status" className="max-w-full px-4 py-2 rounded-full bg-amber-500 text-black text-sm font-semibold shadow text-center">
 									Weak connection — video paused, audio continues
@@ -877,7 +882,6 @@ return (
 						{help && deviceTrouble[help] && (
 							<DeviceHelp kind={help} trouble={deviceTrouble[help]} darkMode={darkMode} onClose={() => setHelp(null)} className="absolute z-30 bottom-3 left-1/2 -translate-x-1/2 w-[min(24rem,calc(100%-1.5rem))]" />
 						)}
-						{alone && !admission && <JoinNotice className={`absolute ${isScreen ? "top-16" : "top-4"} left-1/2 -translate-x-1/2 z-10`} />}
 						{isHost && removing && removing === remoteSocketId && (
 							<div className="absolute inset-0 z-40 flex items-center justify-center p-4 bg-black/60" onKeyDown={e => e.key === "Escape" && setRemoving(null)}>
 								<div role="alertdialog" aria-modal="true" aria-label="Remove from the call" className={`w-full max-w-xs max-h-full overflow-y-auto p-4 rounded-xl shadow-2xl space-y-4 text-center ${darkMode ? "bg-gray-800 text-gray-100" : "bg-white text-gray-900"}`}>
@@ -901,7 +905,7 @@ return (
 								</div>
 							</div>
 						)}
-						{isHost && <JoinRequests requests={requests} darkMode={darkMode} onAdmit={id => answerRequest("room:admit", id)} onDeny={id => answerRequest("room:deny", id)} />}
+						{wide && joinRequests}
 						{infoOpen && !admission && (
 							<MeetingCard darkMode={darkMode} roomId={roomId} alone={alone} copied={copied} onCopy={handleCopyLink} onClose={() => setInfoOpen(false)} />
 						)}
