@@ -6,6 +6,7 @@ import * as files from "../Services/files";
 import { useSocket } from "../useContext/SocketProvider";
 import { keyText, ariaKeys } from "../Services/shortcuts";
 import { ReactionButton } from "./Reactions";
+import { setUnreadTitle } from "../Services/title";
 
 const useChat = () => useSyncExternalStore(chat.subscribe, chat.getState);
 // On wide screens the room makes space for the open panel, so it never covers the call controls
@@ -22,10 +23,8 @@ export const ChatButton = ({ className, look }) => {
 
 	// Also in the tab title, for when the call is in a background tab
 	useEffect(() => {
-		if (!unread) return;
-		const title = document.title;
-		document.title = `(${unread}) ${title}`;
-		return () => { document.title = title; };
+		setUnreadTitle(unread);
+		return () => setUnreadTitle(0);
 	}, [unread]);
 
 	return (

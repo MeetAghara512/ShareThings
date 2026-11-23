@@ -5,7 +5,7 @@ import peer from "../Services/peer";
 
 // Bump when client and server must change together (same number as PROTOCOL_VERSION in server/index.js).
 // The server sends its number on every new connection ("app:version")
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 // No number this long after connecting: the server is from before this check, so older than this tab
 const SILENT_SERVER = 5000;
 

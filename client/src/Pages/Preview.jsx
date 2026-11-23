@@ -14,10 +14,11 @@ const NAME_KEY = "sharethings.name";
 // How often the join screen re-checks who is in the room
 const PEEK_INTERVAL = 4000;
 
-const whoIsHere = names =>
-	names.length === 0 ? "No one else is here yet" :
-	names.length === 1 ? `${names[0]} is in this call` :
-	`${names.slice(0, -1).join(", ")} and ${names.at(-1)} are in this call`;
+// Only how many: the server does not say who is in a room before you join
+const whoIsHere = count =>
+	count === 0 ? "No one else is here yet" :
+	count === 1 ? "1 person is in this call" :
+	`${count} people are in this call`;
 
 // Check camera and mic before joining. Nothing is sent to the room until Join.
 const Preview = ({ darkMode, roomId, onJoin }) => {
@@ -36,7 +37,7 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 	const [cameraOff, setCameraOff] = useState(false);
 	const [muted, setMuted] = useState(false);
 	const [name, setName] = useState(() => localStorage.getItem(NAME_KEY) || user?.name || "");
-	const [peek, setPeek] = useState(null); // { names, full } once known
+	const [peek, setPeek] = useState(null); // { count, full } once known
 
 	const streamRef = useRef(null);
 	const troubleRef = useRef(trouble);
@@ -189,6 +190,8 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 	const displayName = name.trim();
 	// Joins with whatever works, even nothing: then you watch and listen
 	const canJoin = displayName && !peek?.full;
+	// A server from before this change still sends names: then only their number is used
+	const here = peek && whoIsHere(peek.count ?? peek.names?.length ?? 0);
 	const without = ["video", "audio"].filter(kind => trouble[kind]);
 
 	const handleJoin = e => {
@@ -283,7 +286,7 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 					<ServerStatus />
 					{peek && (
 						<p className={`text-sm font-medium ${peek.full ? "text-red-500" : "text-indigo-400"}`}>
-							{peek.full ? `${whoIsHere(peek.names)}. This room is full.` : whoIsHere(peek.names)}
+							{peek.full ? `${here}. This room is full.` : here}
 						</p>
 					)}
 					<p className="text-sm opacity-60">No one in the room can see or hear you until you join.</p>
