@@ -4,6 +4,8 @@ import { MdChatBubbleOutline } from "react-icons/md";
 import * as chat from "../Services/chat";
 import * as files from "../Services/files";
 import { useSocket } from "../useContext/SocketProvider";
+import { keyText, ariaKeys } from "../Services/shortcuts";
+import { ReactionButton } from "./Reactions";
 import { setUnreadTitle } from "../Services/title";
 
 const useChat = () => useSyncExternalStore(chat.subscribe, chat.getState);
@@ -30,7 +32,8 @@ export const ChatButton = ({ className, look }) => {
 			onClick={() => chat.setOpen(!open)}
 			aria-pressed={open}
 			aria-label={unread ? `Chat, ${unread} unread` : "Chat"}
-			title="Chat"
+			title={`Chat (${keyText("chat")})`}
+			aria-keyshortcuts={ariaKeys("chat")}
 			className={`relative ${className} ${open ? "bg-indigo-600 hover:bg-indigo-700 text-white" : look}`}
 		>
 			<MdChatBubbleOutline />
@@ -225,6 +228,7 @@ const ChatPanel = ({ darkMode, remoteName }) => {
 						type="text"
 						value={text}
 						onChange={e => setText(e.target.value)}
+						onKeyDown={e => e.key === "Escape" && chat.setOpen(false)}
 						disabled={!ready}
 						maxLength={chat.MAX_TEXT}
 						placeholder="Type a message"
@@ -232,6 +236,8 @@ const ChatPanel = ({ darkMode, remoteName }) => {
 						className={`flex-1 min-w-0 px-4 py-2 rounded-full border text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 disabled:opacity-50 ` +
 							(darkMode ? "bg-gray-700 border-gray-600 placeholder-gray-400" : "bg-white border-gray-300 placeholder-gray-500")}
 					/>
+					{/* On phones the bar has no room for it */}
+					<ReactionButton className={iconButton} look={darkMode ? "hover:bg-gray-700" : "hover:bg-gray-100"} on="bg-indigo-600 text-white" darkMode={darkMode} boxClass="sm:hidden" end />
 					<button type="submit" disabled={!ready || !text.trim()} aria-label="Send" className={`${iconButton} bg-indigo-600 hover:bg-indigo-700 text-white`}>
 						<FaPaperPlane />
 					</button>

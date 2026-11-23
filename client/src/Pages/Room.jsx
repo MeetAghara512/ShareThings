@@ -9,6 +9,10 @@ import { useNavigate, useParams } from "react-router-dom";
 import CallStatus from "./CallStatus";
 import Preview from "./Preview";
 import ChatPanel, { useChatOpen } from "./ChatPanel";
+import MutedWarning from "./MutedWarning";
+import { ReactionLayer } from "./Reactions";
+import { useCallShortcuts, keyText } from "../Services/shortcuts";
+import * as chat from "../Services/chat";
 import ControlBar, { DeviceHelp, MeetingCard } from "./ControlBar";
 import { useAdaptiveQuality } from "../Services/quality";
 import { setCallTitle } from "../Services/title";
@@ -526,6 +530,13 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	const alone = !remoteSocketId;
 	// A device with no track is shown as missing, even if the join screen never said why
 	const deviceTrouble = { audio: hasMic ? null : trouble.audio || "missing", video: hasCamera ? null : trouble.video || "missing" };
+	// ⌘/Ctrl+D mic, ⌘/Ctrl+E camera, ⌘/Ctrl+Shift+C chat, ⌘/Ctrl+Shift+S screen: the same as the bar's buttons
+	useCallShortcuts({
+		mic: deviceTrouble.audio ? () => fixDevice("audio") : handleToggleMic,
+		camera: deviceTrouble.video ? () => fixDevice("video") : handleToggleCamera,
+		chat: () => chat.setOpen(!chat.getState().open),
+		share: isScreen ? stopShare : startShare,
+	}, joined);
 	// A first letter in a circle, for someone without a camera
 	const avatar = (name, size) => (
 		<span className={`${size} rounded-full bg-indigo-600 text-white font-semibold flex items-center justify-center uppercase`}>{(name || "?").trim().charAt(0)}</span>
@@ -676,6 +687,10 @@ return (
 								<FaDesktop className="shrink-0" /> You are sharing your screen
 							</div>
 						)}
+						{/* Reactions float up over the sender: theirs above their name, yours above your own tile */}
+						{showRemote && <ReactionLayer mine={false} className="absolute z-20 bottom-12 left-4 w-24 h-0" />}
+						{!alone && <ReactionLayer mine className={`absolute z-20 bottom-3 right-3 ${chatOpen ? "w-24" : "w-32"} sm:w-56 aspect-video`} />}
+						<MutedWarning stream={myStream} muted={muted} hint={`press ${keyText("mic")} or the mic button to unmute`} />
 						{paused && (
 							<div role="status" className={`absolute ${isScreen ? "top-16" : "top-4"} left-1/2 -translate-x-1/2 z-10 max-w-[calc(100%-2rem)] px-4 py-2 rounded-full bg-amber-500 text-black text-sm font-semibold shadow text-center`}>
 								Weak connection — video paused, audio continues
