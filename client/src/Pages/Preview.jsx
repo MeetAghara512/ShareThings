@@ -44,6 +44,8 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 	const streamRef = useRef(null);
 	const troubleRef = useRef(trouble);
 	troubleRef.current = trouble;
+	const offRef = useRef({}); // what the person turned off
+	offRef.current = { audio: muted, video: cameraOff };
 	const requestRef = useRef(0); // only the latest camera request counts
 	const handedOverRef = useRef(false);
 	const meterRef = useRef(null);
@@ -71,9 +73,16 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 		const { stream: s, trouble } = navigator.mediaDevices ? await openEach(video, audio) : { stream: new MediaStream(), trouble: { audio: "blocked", video: "blocked" } };
 		// Switched device, retried or left the page meanwhile: drop this one
 		if (request !== requestRef.current) return s.getTracks().forEach(t => t.stop());
+		// Turned off while the prompt was open: not kept open, so its light goes out. Its button opens it
+		const closed = {};
+		s.getTracks().filter(t => offRef.current[t.kind]).forEach(t => {
+			t.stop();
+			s.removeTrack(t);
+			closed[t.kind] = "blocked";
+		});
 		streamRef.current = s;
 		setStream(s);
-		setTrouble(trouble);
+		setTrouble({ ...trouble, ...closed });
 		// Show the devices actually in use (a saved one that is gone falls back to the default)
 		const [camera] = s.getVideoTracks(), [mic] = s.getAudioTracks();
 		if (camera) setVideoId(camera.getSettings().deviceId || "");
@@ -110,9 +119,9 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 		}
 	}, [videoId, audioId, refreshDevices]);
 
-	// Allowed in the address bar meanwhile: the device starts by itself
+	// Allowed in the address bar meanwhile: the device starts by itself, unless it was turned off on purpose
 	useEffect(() => {
-		const stops = ["audio", "video"].map(kind => onGranted(kind, () => troubleRef.current[kind] && fixDevice(kind)));
+		const stops = ["audio", "video"].map(kind => onGranted(kind, () => troubleRef.current[kind] && !offRef.current[kind] && fixDevice(kind)));
 		return () => stops.forEach(stop => stop());
 	}, [fixDevice]);
 
