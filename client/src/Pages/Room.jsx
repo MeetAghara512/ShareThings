@@ -11,6 +11,8 @@ import Preview from "./Preview";
 import ChatPanel, { useChatOpen } from "./ChatPanel";
 import ControlBar, { DeviceHelp, MeetingCard } from "./ControlBar";
 import { setCallTitle } from "../Services/title";
+import { noticeJoin } from "../Services/notify";
+import JoinNotice from "./JoinNotice";
 
 // What the other side last told us about their camera, mic and shared screen (has*: there is a device at all)
 const MEDIA_ON = { video: true, audio: true, screen: false, hasCamera: true, hasMic: true };
@@ -64,6 +66,8 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	const serverRef = useRef(null); // which run of the server we joined, to notice a restart
 	const troubleRef = useRef(trouble);
 	troubleRef.current = trouble;
+	const aloneRef = useRef(true); // for the join notification: only when someone arrives while we wait alone
+	aloneRef.current = !remoteSocketId;
 
 	const setCallState = useCallback(state => {
 		callStateRef.current = state;
@@ -169,9 +173,11 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	useEffect(() => () => setCallTitle(null), []);
 
 	const handleUserJoined = useCallback(({ id, name, seat }) => {
+		const wasAlone = aloneRef.current;
 		remoteSeatRef.current = seat ?? null;
 		setRemoteSocketId(id);
 		setRemoteName(name);
+		if (wasAlone) noticeJoin(name); // only while this tab is in the background and notifications are allowed
 	}, []);
 
 	// Call is over or never started: fresh connection. Like Google Meet, your camera, mic and
@@ -676,6 +682,7 @@ return (
 						{help && deviceTrouble[help] && (
 							<DeviceHelp kind={help} trouble={deviceTrouble[help]} darkMode={darkMode} onClose={() => setHelp(null)} className="absolute z-30 bottom-3 left-1/2 -translate-x-1/2 w-[min(24rem,calc(100%-1.5rem))]" />
 						)}
+						{alone && <JoinNotice className={`absolute ${isScreen ? "top-16" : "top-4"} left-1/2 -translate-x-1/2 z-10`} />}
 						{infoOpen && (
 							<MeetingCard darkMode={darkMode} roomId={roomId} alone={alone} copied={copied} onCopy={handleCopyLink} onClose={() => setInfoOpen(false)} />
 						)}
