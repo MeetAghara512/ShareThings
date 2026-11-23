@@ -17,7 +17,8 @@ const set = patch => {
 export const refreshSpeakers = async () => {
 	if (!CAN_PICK) return;
 	const list = (await navigator.mediaDevices?.enumerateDevices().catch(() => []) ?? []).filter(d => d.kind === "audiooutput" && d.deviceId);
-	const devices = list.filter(d => d.deviceId !== "default");
+	// "default" and Windows' "communications" are other names for a real device
+	const devices = list.filter(d => d.deviceId !== "default" && d.deviceId !== "communications");
 	// Nothing listed: no mic permission yet, which says nothing about the saved speaker
 	const gone = list.length > 0 && state.id && !devices.some(d => d.deviceId === state.id);
 	if (gone) localStorage.removeItem(SPEAKER_KEY);
