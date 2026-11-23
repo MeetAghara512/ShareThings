@@ -8,6 +8,7 @@ const { OAuth2Client } = require("google-auth-library");
 const { sendInvite } = require("./invite");
 const { getIceServers } = require("./turn");
 const { limitConnections, joinLimited, peekLimited } = require("./limits");
+const liveStats = require("./stats");
 
 const app = express();
 const server = http.createServer(app);
@@ -34,6 +35,9 @@ const io = new Server(server, {
 // Too many new connections from one internet address are refused (see limits.js)
 io.use(limitConnections);
 
+// People online and calls in progress, for the first page (see stats.js)
+const stats = liveStats(io);
+
 const MAX_ROOM_SIZE = 2;
 // A dropped connection keeps its seat this long, so the same browser tab can come back to its call
 const SEAT_GRACE = 30000;
@@ -45,7 +49,7 @@ const SERVER_ID = randomBytes(8).toString("hex");
 // Bump when client and server must change together (same number as PROTOCOL_VERSION in
 // client/src/Pages/VersionBanner.jsx). Every new connection is told it, so a tab opened before a deploy
 // can offer a reload
-const PROTOCOL_VERSION = 1;
+const PROTOCOL_VERSION = 2;
 
 // Public identifier of the Google OAuth client (not a secret). Must match GOOGLE_CLIENT_ID in client/src/useContext/AuthProvider.jsx
 const GOOGLE_CLIENT_ID = "123263407226-ltqv9qfv6s58ocr5nvgk2vggoa0addhf.apps.googleusercontent.com";
@@ -124,6 +128,7 @@ function releaseSeat(room, clientId) {
 
 io.on("connection", socket => {
   socket.emit("app:version", { version: PROTOCOL_VERSION });
+  socket.emit("stats:update", stats.current());
 
   // Every event carries an object payload; drop anything else before a handler can throw on it
   socket.use(([, data], next) => {
@@ -182,9 +187,15 @@ io.on("connection", socket => {
   socket.on("ice:candidate", ({ to, candidate }) => {
     if (inSameRoom(to)) io.to(to).emit("ice:candidate", { from: socket.id, candidate });
   });
-  // Camera / mic on or off (or missing) and screen shared or not, so the other side can show a placeholder, a muted icon and the screen
-  socket.on("media:state", ({ to, video, audio, screen, hasCamera, hasMic }) => {
-    if (inSameRoom(to)) io.to(to).emit("media:state", { from: socket.id, video: video !== false, audio: audio !== false, screen: screen === true, hasCamera: hasCamera !== false, hasMic: hasMic !== false });
+  // Camera / mic on or off (or missing), screen shared or not, camera paused by a weak network: the other side shows a placeholder, a muted icon or the screen
+  socket.on("media:state", ({ to, video, audio, screen, hasCamera, hasMic, paused }) => {
+    if (inSameRoom(to)) io.to(to).emit("media:state", { from: socket.id, video: video !== false, audio: audio !== false, screen: screen === true, hasCamera: hasCamera !== false, hasMic: hasMic !== false, paused: paused === true });
+  });
+  // How large this side shows the other person's camera and screen, and its quality setting, so the sender never
+  // sends much more than is shown (see client/src/Services/quality.js)
+  socket.on("view:size", ({ to, camera, screen, mode }) => {
+    const size = s => (s && Number.isFinite(s.width) && Number.isFinite(s.height) ? { width: Math.min(8192, Math.max(0, Math.round(s.width))), height: Math.min(8192, Math.max(0, Math.round(s.height))) } : null);
+    if (inSameRoom(to)) io.to(to).emit("view:size", { from: socket.id, camera: size(camera), screen: size(screen), mode: ["auto", "high", "saver"].includes(mode) ? mode : "auto" });
   });
 
   // Email the room link to a guest; see invite.js for the rules
@@ -198,9 +209,13 @@ io.on("connection", socket => {
   socket.on("room:peek", ({ room, clientId }, ack) => {
     if (peekLimited(socket, ack)) return;
     if (typeof room !== "string" || !room || typeof ack !== "function") return;
-    const others = othersInRoom(room, socket, validClientId(clientId));
-    ack({ names: others.map(o => o.name ?? "Guest"), full: others.length >= MAX_ROOM_SIZE });
+    // Only how many: anyone with the room code can ask, so never who (names are shown once you are in the call)
+    const count = othersInRoom(room, socket, validClientId(clientId)).length;
+    ack({ count, full: count >= MAX_ROOM_SIZE });
   });
+
+  // The first page asks when it opens, since it may open after the numbers were sent
+  socket.on("stats:get", (data, ack) => typeof ack === "function" && ack(stats.current()));
 
   socket.on("room:leave", ({ room }) => {
     if (room === socket.id || !socket.rooms.has(room)) return;

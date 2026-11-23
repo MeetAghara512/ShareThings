@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { setCallStats } from "../Services/files";
 
 // m:ss, or h:mm:ss after an hour
@@ -20,12 +20,17 @@ const rateQuality = (rtt, loss) =>
 	rtt < 0.15 && loss < 0.02 ? "good" : rtt < 0.4 && loss < 0.08 ? "fair" : "poor";
 
 // RTT of the candidate pair in use, plus video packets received and lost so far. Also whether the
-// pair goes through a relay server, and its estimated upload speed (for file sharing)
+// pair goes through a relay server, and its estimated upload speed (for file sharing); and for what we
+// send, the share the other side reports lost (worst of audio and video) and the bytes sent per video lane
 const readStats = report => {
 	let pair;
 	let received = 0;
 	let lost = 0;
+	let sentLoss = 0;
+	const sentBytes = {};
 	report.forEach(s => {
+		if (s.type === "remote-inbound-rtp") sentLoss = Math.max(sentLoss, s.fractionLost || 0);
+		if (s.type === "outbound-rtp" && s.kind === "video") sentBytes[s.mid] = s.bytesSent;
 		if (s.type === "transport" && s.selectedCandidatePairId) pair = report.get(s.selectedCandidatePairId);
 		if (s.type === "inbound-rtp" && s.kind === "video") {
 			received += s.packetsReceived || 0;
@@ -35,13 +40,16 @@ const readStats = report => {
 	// Firefox has no transport stats and flags the pair instead
 	if (!pair) report.forEach(s => { if (s.type === "candidate-pair" && s.selected) pair = s; });
 	const relay = [pair?.localCandidateId, pair?.remoteCandidateId].some(id => report.get(id)?.candidateType === "relay");
-	return { rtt: pair?.currentRoundTripTime, received, lost, relay, bitrate: pair?.availableOutgoingBitrate };
+	return { rtt: pair?.currentRoundTripTime, received, lost, relay, bitrate: pair?.availableOutgoingBitrate, sentLoss, sentBytes };
 };
 
-// Call timer and connection quality, in the control bar; mounted only while the call is connected
-const CallStatus = ({ connection, since, reconnecting }) => {
+// Call timer and connection quality, in the control bar; mounted only while the call is connected.
+// onStats gets every poll's numbers (adaptive quality uses them, so the stats are read only once)
+const CallStatus = ({ connection, since, reconnecting, onStats }) => {
 	const [now, setNow] = useState(Date.now);
 	const [quality, setQuality] = useState(null);
+	const onStatsRef = useRef(onStats);
+	onStatsRef.current = reconnecting ? null : onStats; // a dropped connection is handled by the reconnect, not by lowering video
 
 	useEffect(() => {
 		const id = setInterval(() => setNow(Date.now()), 1000);
@@ -68,6 +76,7 @@ const CallStatus = ({ connection, since, reconnecting }) => {
 			const rated = rateQuality(stats.rtt, loss);
 			setQuality(rated);
 			setCallStats({ quality: rated, relay: stats.relay, bitrate: stats.bitrate }); // files slow down when Poor
+			onStatsRef.current?.({ quality: rated, rtt: stats.rtt, loss, sentLoss: stats.sentLoss, sentBytes: stats.sentBytes, at: Date.now() });
 		}, 2000);
 		return () => {
 			active = false;
