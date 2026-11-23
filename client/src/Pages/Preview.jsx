@@ -31,6 +31,7 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 	const [help, setHelp] = useState(null); // the device whose fix is shown
 	const [loading, setLoading] = useState(true);
 	const [slow, setSlow] = useState(false); // still waiting for the permission prompt
+	const [attempt, setAttempt] = useState(0); // each camera request (also Retry) gets its own wait
 	const [devices, setDevices] = useState({ video: [], audio: [] });
 	const [videoId, setVideoId] = useState(() => localStorage.getItem(CAMERA_KEY) || "");
 	const [audioId, setAudioId] = useState(() => localStorage.getItem(MIC_KEY) || "");
@@ -64,6 +65,7 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 		setTrouble({});
 		setHelp(null);
 		setLoading(true);
+		setAttempt(a => a + 1);
 		// Mic and camera each on their own terms: a blocked camera does not stop the mic (an insecure page has neither)
 		const { stream: s, trouble } = navigator.mediaDevices ? await openEach(video, audio) : { stream: new MediaStream(), trouble: { audio: "blocked", video: "blocked" } };
 		// Switched device, retried or left the page meanwhile: drop this one
@@ -125,7 +127,7 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 		if (!loading) return;
 		const id = setTimeout(() => setSlow(true), 10000);
 		return () => clearTimeout(id);
-	}, [loading]);
+	}, [loading, attempt]);
 
 	useEffect(() => {
 		stream?.getVideoTracks().forEach(t => t.enabled = !cameraOff);
