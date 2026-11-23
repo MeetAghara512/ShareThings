@@ -37,16 +37,17 @@ export const troubleOf = e =>
 // (maybe empty) and each kind's trouble. After a refusal no device is asked again by itself unless
 // the refusal is explained (another device is blocked, or the computer blocks it): a dismissed prompt
 // is never shown twice
-export const openEach = async (videoId, audioId) => {
+export const openEach = async (videoId, audioId, off = {}) => { // off: devices turned off, which are not opened
 	const ids = { video: videoId, audio: audioId };
 	try {
 		const all = await listed();
-		return { stream: await navigator.mediaDevices.getUserMedia({ video: pick(all, videoId, "video"), audio: pick(all, audioId, "audio") }), trouble: {} };
+		return { stream: await navigator.mediaDevices.getUserMedia({ video: !off.video && pick(all, videoId, "video"), audio: !off.audio && pick(all, audioId, "audio") }), trouble: {} };
 	} catch (e) {
 		const states = { video: await permission("video"), audio: await permission("audio") };
 		const refused = troubleOf(e) === "blocked" && !Object.values(states).includes("denied");
 		const tracks = [], trouble = {};
 		for (const kind of ["audio", "video"]) {
+			if (off[kind]) continue;
 			if (states[kind] === "denied" || (refused && states[kind] !== "granted")) {
 				trouble[kind] = "blocked";
 				continue;
@@ -76,9 +77,9 @@ export const onGranted = (kind, callback) => {
 };
 
 // The same, for code that wants a single stream: what works of camera and mic, or the error if nothing does
-export const openDevices = async (videoId, audioId) => {
-	const { stream, trouble } = await openEach(videoId, audioId);
-	if (!stream.getTracks().length) throw new DOMException("No camera or microphone", trouble.video === "blocked" ? "NotAllowedError" : "NotFoundError");
+export const openDevices = async (videoId, audioId, off = {}) => {
+	const { stream, trouble } = await openEach(videoId, audioId, off);
+	if (!stream.getTracks().length && !off.video && !off.audio) throw new DOMException("No camera or microphone", trouble.video === "blocked" ? "NotAllowedError" : "NotFoundError");
 	return stream;
 };
 

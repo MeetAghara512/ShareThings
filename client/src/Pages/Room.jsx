@@ -244,17 +244,20 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		const connection = peer.peer;
 		let stream = myStreamRef.current;
 		if (!stream) {
-			const { videoId, audioId, cameraOff, muted } = prefsRef.current;
-			stream = await openDevices(videoId, audioId);
+			const { videoId, audioId } = prefsRef.current;
+			// What is off right now stays closed, and its button opens it
+			const off = { ...offRef.current };
+			stream = off.video && off.audio ? new MediaStream() : await openDevices(videoId, audioId, off);
 			if (connection !== peer.peer) {
 				// The call ended while the camera prompt was open (e.g. browser Back): don't leave the camera on
 				stream.getTracks().forEach(t => t.stop());
 				return false;
 			}
-			stream.getVideoTracks().forEach(t => t.enabled = !cameraOff);
-			stream.getAudioTracks().forEach(t => t.enabled = !muted);
+			stream.getVideoTracks().forEach(t => t.enabled = !offRef.current.video);
+			stream.getAudioTracks().forEach(t => t.enabled = !offRef.current.audio);
 			myStreamRef.current = stream;
 			setMyStream(stream);
+			setTrouble(t => ({ ...t, ...(off.video && { video: "off" }), ...(off.audio && { audio: "off" }) }));
 		}
 		if (tracksAddedRef.current !== connection) {
 			tracksAddedRef.current = connection;
