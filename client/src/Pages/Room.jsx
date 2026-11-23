@@ -630,16 +630,16 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 
 	// Toggle mic on/off
 	const handleToggleMic = () => {
-		if (!myStreamRef.current) return;
-		if (trouble.audio === "off" && !myStreamRef.current.getAudioTracks().length) return fixDevice("audio");
+		if (!myStreamRef.current) return setMuted(!muted); // between rooms: the next call opens only what is on
+		if (trouble.audio === "off" && !myStreamRef.current.getAudioTracks().length) return muted ? fixDevice("audio") : setMuted(true);
 		myStreamRef.current.getAudioTracks().forEach(track => track.enabled = muted);
 		setMuted(!muted);
 	};
 
 	// Toggle camera on/off; the shared screen is not affected
 	const handleToggleCamera = () => {
-		if (!myStreamRef.current) return;
-		if (trouble.video === "off" && !myStreamRef.current.getVideoTracks().length) return fixDevice("video");
+		if (!myStreamRef.current) return setCameraOff(!cameraOff); // between rooms: the next call opens only what is on
+		if (trouble.video === "off" && !myStreamRef.current.getVideoTracks().length) return cameraOff ? fixDevice("video") : setCameraOff(true);
 		myStreamRef.current.getVideoTracks().forEach(track => track.enabled = cameraOff);
 		setCameraOff(!cameraOff);
 	};
