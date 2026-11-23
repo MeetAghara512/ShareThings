@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import './index.css';
 import App from './App';
+import './tailwind.css'; // after our own CSS, the same order as when the CDN script added it
 import { BrowserRouter } from 'react-router-dom';
 import { SocketProvider } from './useContext/SocketProvider';
 

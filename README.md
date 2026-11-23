@@ -23,7 +23,7 @@ Audio, video, chat and files go directly between the two browsers (through an en
 - **Media:** WebRTC, one `RTCPeerConnection` per call, encrypted with DTLS-SRTP. Its audio, camera and screen lanes are set up once, so sharing the screen needs no renegotiation.
 - **Connectivity:** STUN (Google) for a direct connection, and a TURN relay from Xirsys when one is configured, for networks that block direct connections. The server fetches the TURN credentials and shares them for 5 minutes.
 - **Chat and files:** two WebRTC data channels on the same connection. Files go in 8 MB blocks, each checked with SHA-256. The receiver writes them to the browser's private storage (OPFS) from a Web Worker, then saves them where the person chose at Accept, or offers a Save link.
-- **App:** React 18 and Vite (in `client/`). Tailwind CSS is loaded from its CDN in `client/index.html`; it is not a project dependency.
+- **App:** React 18 and Vite (in `client/`). Tailwind CSS is built into the app's stylesheet by PostCSS; nothing loads from its CDN.
 
 ## Run it locally
 
@@ -76,7 +76,7 @@ Then open http://localhost:3000. nginx in the client container serves the app an
 - **App:** a Static Site with root directory `client`, build command `npm ci && npm run build`, publish directory `build`, and `REACT_APP_SOCKET_SERVER_URL` set to the server's address. Also set:
   - **Redirects/Rewrites:** `/*` to `/index.html` as a Rewrite, so room links like `/room/abc-defg-hij` open the app.
   - **Headers** for path `/*`, with `<server host>` replaced by the server's host name (without it the app cannot reach the server):
-    - `Content-Security-Policy`: `default-src 'self'; script-src 'self' https://cdn.tailwindcss.com https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; img-src 'self' data:; connect-src 'self' https://accounts.google.com/gsi/ https://<server host> wss://<server host>; frame-src https://accounts.google.com/gsi/; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'`
+    - `Content-Security-Policy`: `default-src 'self'; script-src 'self' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; img-src 'self' data:; connect-src 'self' https://accounts.google.com/gsi/ https://<server host> wss://<server host>; frame-src https://accounts.google.com/gsi/; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'`
     - `X-Content-Type-Options`: `nosniff`
     - `Referrer-Policy`: `strict-origin-when-cross-origin`
     - `Permissions-Policy`: `camera=(self), microphone=(self), display-capture=(self)`

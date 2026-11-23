@@ -11,5 +11,7 @@ export default defineConfig({
   },
   build: {
     outDir: 'build',
+    // The minifier rewrites colors, e.g. rgb(0 0 0 / 0.1) to #0000001a, which is a slightly different color
+    cssMinify: false,
   },
 });
