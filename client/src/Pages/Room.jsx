@@ -9,6 +9,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import CallStatus from "./CallStatus";
 import Preview from "./Preview";
 import ChatPanel, { useChatOpen } from "./ChatPanel";
+import MutedWarning from "./MutedWarning";
 import ControlBar, { DeviceHelp, MeetingCard } from "./ControlBar";
 
 // What the other side last told us about their camera, mic and shared screen (has*: there is a device at all)
@@ -664,6 +665,7 @@ return (
 								<FaDesktop className="shrink-0" /> You are sharing your screen
 							</div>
 						)}
+						<MutedWarning stream={myStream} muted={muted} />
 						{help && deviceTrouble[help] && (
 							<DeviceHelp kind={help} trouble={deviceTrouble[help]} darkMode={darkMode} onClose={() => setHelp(null)} className="absolute z-30 bottom-3 left-1/2 -translate-x-1/2 w-[min(24rem,calc(100%-1.5rem))]" />
 						)}
