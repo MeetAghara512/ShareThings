@@ -353,11 +353,13 @@ io.on("connection", socket => {
   // The first page asks when it opens, since it may open after the numbers were sent
   socket.on("stats:get", (data, ack) => !statsLimited(socket) && typeof ack === "function" && ack(stats.current()));
 
-  // closing: the tab is closing or reloading, so a host may be back in a moment
+  // closing: the tab is closing or reloading, so it may be back in a moment. A guest keeps their seat for SEAT_GRACE,
+  // so a reload does not have to ask the host again; the host can still remove them meanwhile
   socket.on("room:leave", ({ room, closing }) => {
     if (socket.data.request?.room === room) dropRequest(socket);
     if (room === socket.id || !socket.rooms.has(room)) return;
-    socket.to(room).emit("user:left", { id: socket.id });
+    const guestMayReturn = closing === true && hosts.get(room)?.key !== socket.data.clientId && holdSeat(room, socket, "closing");
+    if (!guestMayReturn) socket.to(room).emit("user:left", { id: socket.id });
     if (closing === true) hostMayReturn(room, socket);
     socket.leave(room);
     settleHost(room);
