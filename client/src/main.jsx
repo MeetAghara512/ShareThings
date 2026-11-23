@@ -1,5 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import '@fontsource-variable/inter';
+import '@fontsource-variable/space-grotesk';
 import './index.css';
 import App from './App';
 import './tailwind.css'; // after our own CSS, the same order as when the CDN script added it

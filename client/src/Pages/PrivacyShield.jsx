@@ -19,7 +19,7 @@ const explain = (reason, who) => ({
 }[reason]);
 
 // The shield next to the call status; tapping it shows what the browser itself measured
-const PrivacyShield = ({ remoteName, darkMode }) => {
+const PrivacyShield = ({ remoteName }) => {
 	const state = useSyncExternalStore(privacy.subscribe, privacy.getState);
 	const [open, setOpen] = useState(false);
 	const button = useRef(null);
@@ -55,12 +55,11 @@ const PrivacyShield = ({ remoteName, darkMode }) => {
 					ref={panel}
 					role="dialog"
 					aria-label="Connection privacy"
-					className={`fixed z-50 left-3 right-3 top-[calc(var(--app-top,0px)+3.5rem)] md:left-6 md:right-auto md:top-auto md:bottom-20 md:w-80 max-h-[calc(100dvh-5rem)] overflow-y-auto p-4 rounded-xl shadow-2xl space-y-3 text-sm ` +
-						(darkMode ? "bg-gray-800 text-gray-100" : "bg-white text-gray-900")}
+					className={`fixed z-50 left-3 right-3 top-[calc(var(--app-top,0px)+3.5rem)] md:left-6 md:right-auto md:top-auto md:bottom-20 lg:bottom-28 md:w-80 max-h-[calc(100dvh-5rem)] overflow-y-auto p-4 rounded-xl shadow-2xl space-y-3 text-sm bg-surface text-ink`}
 				>
 					<div className="flex items-start justify-between gap-2">
 						<h3 className={`flex items-center gap-1.5 text-base font-semibold ${state.status === "private" ? "" : color}`}><Icon className="shrink-0" /> {title}</h3>
-						<button type="button" onClick={() => setOpen(false)} title="Close" aria-label="Close" className={`-m-1 p-1 rounded-full text-lg ${darkMode ? "hover:bg-gray-700" : "hover:bg-gray-100"}`}>
+						<button type="button" onClick={() => setOpen(false)} title="Close" aria-label="Close" className={`-m-1 p-1 rounded-full text-lg hover:bg-raised`}>
 							<MdClose />
 						</button>
 					</div>

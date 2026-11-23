@@ -1,5 +1,5 @@
 import React, { useEffect, useCallback, useRef, useState } from "react";
-import { FaMoon, FaSun, FaDesktop, FaVideoSlash, FaMicrophoneSlash } from "react-icons/fa";
+import { FaDesktop, FaVideoSlash, FaMicrophoneSlash } from "react-icons/fa";
 import peer from "../Services/peer";
 import recovery from "../Services/recovery";
 import clientId, { renewClientId } from "../Services/clientId";
@@ -13,6 +13,7 @@ import MutedWarning from "./MutedWarning";
 import { FileDropOverlay, useFileDrop } from "./FileDrop";
 import { ReactionLayer } from "./Reactions";
 import MovableTile from "./MovableTile";
+import AppHeader from "./AppHeader";
 import { RemoteAudio } from "./Speaker";
 import { useCallShortcuts, keyText } from "../Services/shortcuts";
 import * as chat from "../Services/chat";
@@ -714,14 +715,13 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 
 	// A first letter in a circle, for someone without a camera
 	const avatar = (name, size) => (
-		<span className={`${size} rounded-full bg-indigo-600 text-white font-semibold flex items-center justify-center uppercase`}>{(name || "?").trim().charAt(0)}</span>
+		<span className={`${size} rounded-full bg-accent text-on-accent font-semibold flex items-center justify-center uppercase`}>{(name || "?").trim().charAt(0)}</span>
 	);
 
 	// The meeting card shows while you wait alone and hides when someone joins; the info button toggles it
 	useEffect(() => setInfoOpen(!remoteSocketId), [remoteSocketId]);
 
-	// Call timer, quality and "Reconnecting...": in the control bar on wide screens; on phones, where the bar
-	// has no room, in the stage's top-left corner. Shown in one place only, so the stats are read once
+	// Narrow stages stack their notices under what is at the top
 	const [wide, setWide] = useState(() => window.matchMedia("(min-width: 768px)").matches);
 	useEffect(() => {
 		const query = window.matchMedia("(min-width: 768px)");
@@ -731,10 +731,11 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	}, []);
 	// Below the small swap tile (top right) where the stage is too narrow for both side by side
 	const belowTile = !wide && remoteSharing ? 8 : 0;
-	const joinRequests = isHost && <JoinRequests requests={requests} darkMode={darkMode} inline={!wide} tile={!!remoteSharing} onAdmit={id => answerRequest("room:admit", id)} onDeny={id => answerRequest("room:deny", id)} />;
+	const joinRequests = isHost && <JoinRequests requests={requests} inline={!wide} tile={!!remoteSharing} belowStatus={!!callStart} onAdmit={id => answerRequest("room:admit", id)} onDeny={id => answerRequest("room:deny", id)} />;
 	const status = callStart && (
 		<div className="flex items-center gap-3 min-w-0">
-			<PrivacyShield remoteName={remoteName} darkMode={darkMode} />
+			<span className="max-md:hidden truncate" title="Room code">{roomId}</span>
+			<PrivacyShield remoteName={remoteName} />
 			<CallStatus connection={peer.peer} since={callStart} reconnecting={reconnecting} onStats={onStats} />
 		</div>
 	);
@@ -767,30 +768,22 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	}, [joined]);
 
 return (
-	<div className={`${joined ? "relative top-[var(--app-top,0px)] h-[var(--app-height,100dvh)] overflow-hidden" : "min-h-screen"} flex flex-col transition-colors duration-500 ${darkMode ? "bg-zinc-900 text-white" : "bg-gray-100 text-gray-900"}`}>
+	<div className={`${joined ? "relative top-[var(--app-top,0px)] h-[var(--app-height,100dvh)] overflow-hidden" : "min-h-screen"} flex flex-col transition-colors duration-500 bg-ground text-ink`}>
 		{!joined ? (
 			<>
-				<header className={`flex justify-between items-center p-5 shadow border-b ${darkMode ? "border-white/10" : "border-gray-200"}`}>
-					<h2 className="text-2xl font-extrabold bg-gradient-to-r from-indigo-400 via-purple-500 to-pink-500 bg-clip-text text-transparent transition duration-300 hover:from-pink-500 hover:to-indigo-400">
-						ShareThings
-					</h2>
-					<button
-						onClick={toggleDarkMode}
-						className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition duration-300"
-					>
-						{darkMode ? <FaSun size={20} /> : <FaMoon size={20} />}
-					</button>
-				</header>
-				<main className="flex-grow flex flex-col items-center justify-center p-6">
-					<Preview darkMode={darkMode} roomId={roomId} onJoin={handleJoin} />
+				<AppHeader darkMode={darkMode} toggleDarkMode={toggleDarkMode}>
+					<span className="text-sm text-muted truncate">{roomId}</span>
+				</AppHeader>
+				<main className="flex-grow flex flex-col items-center justify-center px-4 pb-6 sm:px-8">
+					<Preview roomId={roomId} onJoin={handleJoin} />
 				</main>
 			</>
 		) : (
 			<>
 				{/* The stage fills the screen above the control bar: the page itself never scrolls. Below lg (phones,
 				    tablets) with the chat open it keeps the top 40% (the chat sits under it, see ChatPanel); dvh follows the keyboard */}
-				<main className={`flex-1 min-h-0 px-2 pt-2 sm:px-4 sm:pt-4 ${chatOpen ? "lg:pr-[26rem] max-lg:order-first max-lg:flex-none max-lg:h-[calc(var(--app-height,100dvh)*0.4)] max-lg:min-h-[160px]" : ""}`}>
-					<div className="relative w-full h-full bg-black rounded-2xl overflow-hidden" {...fileDrop.handlers}>
+				<main className={`flex-1 min-h-0 px-2 pt-2 sm:px-4 sm:pt-4 lg:pb-4 ${chatOpen ? "lg:pr-[26rem] max-lg:order-first max-lg:flex-none max-lg:h-[calc(var(--app-height,100dvh)*0.4)] max-lg:min-h-[160px]" : ""}`}>
+					<div className="relative w-full h-full bg-black rounded-3xl overflow-hidden lg:[--tile-bottom:112px]" {...fileDrop.handlers}>
 						{fileDrop.over && <FileDropOverlay name={remoteName} />}
 						{/* Their sound plays here, so swapping the videos never cuts it */}
 						{showRemote && <RemoteAudio stream={remoteStream} />}
@@ -799,7 +792,7 @@ return (
 								autoPlay
 								playsInline
 								muted
-								className="w-full h-full object-contain"
+								className={`w-full h-full object-contain ${bigStream === remoteStream ? "max-md:object-cover" : ""}`}
 								ref={(v) => {
 									remoteVideoRef.current = v;
 									if (v && v.srcObject !== bigStream) v.srcObject = bigStream;
@@ -812,16 +805,10 @@ return (
 								<span>{remoteMedia.paused ? `${remoteName || "Their"}'s video is paused: weak connection` : remoteMedia.hasCamera ? "Camera off" : `${remoteName || "They"} has no camera`}</span>
 							</div>
 						)}
-						{showRemote && (remoteName || !remoteMedia.audio) && (
-							<span className="absolute bottom-4 left-4 max-w-[calc(100%-12rem)] flex items-center gap-1.5 px-2 py-1 rounded bg-black/60 text-white text-sm">
-								{!remoteMedia.audio && <FaMicrophoneSlash className="shrink-0 text-red-400" title={remoteMedia.hasMic ? "Muted" : "No microphone"} />}
-								<span className="truncate">{remoteName}</span>
-							</span>
-						)}
 						{remoteSharing && (
 							<MovableTile
 								className="absolute top-4 right-4 z-10 w-36 sm:w-48 aspect-video"
-								frameClass="relative w-full h-full bg-black border-white border-2 rounded-lg overflow-hidden shadow-md transition-colors hover:border-indigo-400"
+								frameClass="relative w-full h-full bg-black border-white border-2 rounded-2xl overflow-hidden shadow-md transition-colors hover:border-accent"
 							>
 								<button
 									type="button"
@@ -859,8 +846,8 @@ return (
 								fixed={alone}
 								title="Drag to move, drag a corner to resize"
 								overlay={!alone && <ReactionLayer mine className="absolute inset-0 z-20" />}
-								className={alone ? "absolute inset-0" : `absolute bottom-3 right-3 z-10 ${chatOpen ? "w-24" : "w-32"} sm:w-56 aspect-video`}
-								frameClass={alone ? "relative w-full h-full" : "relative w-full h-full border-white/70 border-2 rounded-lg overflow-hidden shadow-lg bg-zinc-800"}
+								className={alone ? "absolute inset-0" : `absolute bottom-3 right-3 lg:bottom-28 z-10 ${chatOpen ? "w-24" : "w-32"} sm:w-56 aspect-video`}
+								frameClass={alone ? "relative w-full h-full" : "relative w-full h-full border-white/80 border-2 rounded-2xl overflow-hidden shadow-lg bg-zinc-800"}
 							>
 								<video
 									autoPlay
@@ -878,18 +865,26 @@ return (
 								{!alone && <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-black/60 text-white text-xs">{!hasCamera ? "You (no camera)" : isHost ? "You (host)" : "You"}</span>}
 							</MovableTile>
 						)}
-						{!wide && status && (
-							<div className={`absolute top-3 left-3 z-10 px-2 py-1 rounded bg-black/60 text-white text-xs ${remoteSharing ? "max-w-[calc(100%-11.25rem)] sm:max-w-[calc(100%-14.25rem)]" : ""}`}>{status}</div>
+						{(status || (showRemote && (remoteName || !remoteMedia.audio))) && (
+							<div className={`absolute top-3 left-3 z-10 flex ${belowTile ? "flex-wrap" : ""} items-center gap-2 text-white text-xs sm:text-sm ${remoteSharing ? "max-w-[calc(100%-11.25rem)] sm:max-w-[calc(100%-14.25rem)]" : "max-w-[calc(100%-1.5rem)]"}`}>
+								{showRemote && (remoteName || !remoteMedia.audio) && (
+									<span className="min-w-0 sm:max-w-[12rem] h-9 px-3 flex items-center gap-1.5 rounded-xl bg-black/75 font-medium">
+										{!remoteMedia.audio && <FaMicrophoneSlash className="shrink-0 text-red-400" title={remoteMedia.hasMic ? "Muted" : "No microphone"} />}
+										<span className="truncate">{remoteName}</span>
+									</span>
+								)}
+								{status && <div className="shrink-0 max-w-full overflow-hidden h-9 px-3 flex items-center rounded-xl bg-black/75">{status}</div>}
+							</div>
 						)}
 						{isScreen && (
-							<div style={belowTile ? { top: `${belowTile}rem` } : undefined} className={`absolute ${!wide && status ? "top-16" : "top-4"} left-1/2 -translate-x-1/2 z-10 max-w-[calc(100%-2rem)] px-4 py-2 rounded-full bg-indigo-600 text-white text-sm font-semibold shadow flex items-center gap-2 whitespace-nowrap`}>
+							<div style={belowTile ? { top: `${belowTile}rem` } : undefined} className={`absolute ${status ? "top-16" : "top-4"} left-1/2 -translate-x-1/2 z-10 max-w-[calc(100%-2rem)] px-4 py-2 rounded-full bg-accent text-on-accent text-sm font-semibold shadow flex items-center gap-2 whitespace-nowrap`}>
 								<FaDesktop className="shrink-0" /> You are sharing your screen
 							</div>
 						)}
 						{/* Reactions float up over the sender: theirs above their name, yours above your own tile */}
-						{showRemote && <ReactionLayer mine={false} className="absolute z-20 bottom-12 left-4 w-24 h-0" />}
+						{showRemote && <ReactionLayer mine={false} className="absolute z-20 bottom-12 lg:bottom-28 left-4 w-24 h-0" />}
 						{/* Small notices stack here, under what is already at the top (phone status, sharing), so none covers another */}
-						<div style={{ top: `${Math.max(belowTile + (isScreen ? 3 : 0), 1 + 3 * ((!wide && status ? 1 : 0) + (isScreen ? 1 : 0)))}rem` }} className="absolute z-30 inset-x-2 bottom-2 flex flex-col items-center gap-2 pointer-events-none">
+						<div style={{ top: `${Math.max(belowTile + (isScreen ? 3 : 0), 1 + 3 * ((status ? 1 : 0) + (isScreen ? 1 : 0)))}rem` }} className="absolute z-30 inset-x-2 bottom-2 flex flex-col items-center gap-2 pointer-events-none">
 							{alone && !admission && <JoinNotice className="pointer-events-auto" />}
 							{offline && (
 								<div role="alert" className="max-w-full px-4 py-2 rounded-2xl bg-amber-500 text-black text-sm font-semibold shadow flex flex-wrap items-center justify-center gap-x-3 gap-y-1 pointer-events-auto">
@@ -906,15 +901,15 @@ return (
 							)}
 						</div>
 						{help && deviceTrouble[help] && (
-							<DeviceHelp kind={help} trouble={deviceTrouble[help]} darkMode={darkMode} onClose={() => setHelp(null)} className="absolute z-30 bottom-3 left-1/2 -translate-x-1/2 w-[min(24rem,calc(100%-1.5rem))]" />
+							<DeviceHelp kind={help} trouble={deviceTrouble[help]} onClose={() => setHelp(null)} className="absolute z-30 bottom-3 lg:bottom-28 left-1/2 -translate-x-1/2 w-[min(24rem,calc(100%-1.5rem))]" />
 						)}
 						{isHost && removing && removing === remoteSocketId && (
 							<div className="absolute inset-0 z-40 flex items-center justify-center p-4 bg-black/60" onKeyDown={e => e.key === "Escape" && setRemoving(null)}>
-								<div role="alertdialog" aria-modal="true" aria-label="Remove from the call" className={`w-full max-w-xs max-h-full overflow-y-auto p-4 rounded-xl shadow-2xl space-y-4 text-center ${darkMode ? "bg-gray-800 text-gray-100" : "bg-white text-gray-900"}`}>
+								<div role="alertdialog" aria-modal="true" aria-label="Remove from the call" className={`w-full max-w-xs max-h-full overflow-y-auto p-4 rounded-xl shadow-2xl space-y-4 text-center bg-surface text-ink`}>
 									<p className="font-semibold break-words">Remove {remoteName || "this person"} from the call?</p>
 									<div className="flex justify-center gap-3">
-										<button type="button" autoFocus onClick={() => setRemoving(null)} className={`px-4 py-2 rounded-full font-semibold border ${darkMode ? "border-gray-600 hover:bg-gray-700" : "border-gray-300 hover:bg-gray-100"}`}>Cancel</button>
-										<button type="button" onClick={removeRemote} className="px-4 py-2 rounded-full font-semibold bg-red-600 hover:bg-red-700 text-white">Remove</button>
+										<button type="button" autoFocus onClick={() => setRemoving(null)} className={`px-4 py-2 rounded-full font-semibold border border-line hover:bg-raised`}>Cancel</button>
+										<button type="button" onClick={removeRemote} className="px-4 py-2 rounded-full font-semibold bg-danger hover:bg-danger-hover text-white">Remove</button>
 									</div>
 								</div>
 							</div>
@@ -926,21 +921,19 @@ return (
 									{admission === "asking" ? (
 										<p className="text-sm opacity-80">You'll join when someone in the call lets you in.</p>
 									) : (
-										<button type="button" onClick={() => { setAdmission("joining"); joinRoom(); }} className="px-4 py-2 rounded-full bg-indigo-600 hover:bg-indigo-700 font-semibold">Join now</button>
+										<button type="button" onClick={() => { setAdmission("joining"); joinRoom(); }} className="px-4 py-2 rounded-full bg-accent hover:bg-accent-hover text-on-accent font-semibold">Join now</button>
 									)}
 								</div>
 							</div>
 						)}
 						{wide && joinRequests}
 						{infoOpen && !admission && (
-							<MeetingCard darkMode={darkMode} roomId={roomId} alone={alone} copied={copied} onCopy={handleCopyLink} onClose={() => setInfoOpen(false)} />
+							<MeetingCard roomId={roomId} alone={alone} copied={copied} onCopy={handleCopyLink} onClose={() => setInfoOpen(false)} />
 						)}
 					</div>
 				</main>
 				<ControlBar
 					darkMode={darkMode}
-					roomId={roomId}
-					status={wide && status}
 					muted={muted}
 					cameraOff={cameraOff}
 					trouble={deviceTrouble}
@@ -959,7 +952,7 @@ return (
 					onPopOut={hasPicture && document.pictureInPictureEnabled ? popOut : null}
 					onLeave={handleCutCall}
 				/>
-				<ChatPanel darkMode={darkMode} remoteName={remoteName} />
+				<ChatPanel remoteName={remoteName} />
 			</>
 		)}
 	</div>

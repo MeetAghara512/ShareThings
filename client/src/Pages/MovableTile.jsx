@@ -16,11 +16,13 @@ const clamp = (value, low, high) => Math.max(low, Math.min(value, high));
 const widest = stage => Math.max(MIN_WIDTH, Math.min(stage.clientWidth, stage.clientHeight * RATIO) * MAX_SHARE);
 
 // The tile's place, kept fully on the stage
+const bottomGap = stage => parseFloat(getComputedStyle(stage).getPropertyValue("--tile-bottom")) || GAP; // the floating control bar, where there is one
+
 const fit = ({ left, top, width }, stage) => {
 	const w = clamp(width, MIN_WIDTH, widest(stage));
 	return {
 		left: clamp(left, GAP, Math.max(GAP, stage.clientWidth - w - GAP)),
-		top: clamp(top, GAP, Math.max(GAP, stage.clientHeight - w / RATIO - GAP)),
+		top: clamp(top, GAP, Math.max(GAP, stage.clientHeight - w / RATIO - bottomGap(stage))),
 		width: w,
 	};
 };
@@ -30,7 +32,7 @@ const resized = (start, corner, dx, dy, stage) => {
 	const west = corner.includes("w"), north = corner.includes("n");
 	const right = start.left + start.width, bottom = start.top + start.width / RATIO;
 	const growX = west ? -dx : dx, growY = (north ? -dy : dy) * RATIO;
-	const room = Math.min((west ? right : stage.clientWidth - start.left) - GAP, ((north ? bottom : stage.clientHeight - start.top) - GAP) * RATIO);
+	const room = Math.min((west ? right : stage.clientWidth - start.left) - GAP, (north ? bottom - GAP : stage.clientHeight - start.top - bottomGap(stage)) * RATIO);
 	const width = clamp(start.width + (Math.abs(growX) > Math.abs(growY) ? growX : growY), MIN_WIDTH, Math.max(MIN_WIDTH, Math.min(room, widest(stage))));
 	return { left: west ? right - width : start.left, top: north ? bottom - width / RATIO : start.top, width };
 };

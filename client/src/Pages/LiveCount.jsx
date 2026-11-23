@@ -20,7 +20,7 @@ const LiveCount = () => {
 
 	if (!stats || stats.online < SHOW_ONLINE_FROM) return null;
 	return (
-		<p className="text-sm text-center opacity-80">
+		<p className="text-sm text-muted">
 			<span aria-hidden="true">{"🟢 "}</span>
 			{count(stats.online, "person", "people")} online {"·"} {count(stats.calls, "call", "calls")} in progress
 		</p>

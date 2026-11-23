@@ -39,7 +39,7 @@ const NetworkCheck = () => {
 				type="button"
 				onClick={run}
 				disabled={checking || status !== "connected"}
-				className="font-medium text-indigo-500 hover:underline disabled:opacity-50 disabled:cursor-not-allowed disabled:no-underline"
+				className="font-medium text-accent-ink hover:underline disabled:opacity-50 disabled:cursor-not-allowed disabled:no-underline"
 			>
 				{checking ? "Checking…" : result ? "Check again" : "Check my network"}
 			</button>

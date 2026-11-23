@@ -106,14 +106,14 @@ export const AuthProvider = ({ children }) => {
 
 export const GoogleSignInButton = () => {
 	const { checking } = useAuth();
-	if (opensGoogle) return <p role="status" className="opacity-70">Opening Google…</p>;
-	if (checking) return <p role="status" className="opacity-70">Signing in…</p>;
+	if (opensGoogle) return <p role="status" className="text-sm text-muted">Opening Google…</p>;
+	if (checking) return <p role="status" className="text-sm text-muted">Signing in…</p>;
 	return (
-		<div className="flex flex-col items-start gap-2">
-			<button type="button" onClick={() => goToGoogle(isSignInTab())} className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-gray-400 font-medium hover:bg-gray-500/10">
-				<FcGoogle className="text-lg" /> Sign in with Google
+		<div className="relative">
+			<button type="button" aria-label="Sign in with Google" onClick={() => goToGoogle(isSignInTab())} className="h-11 inline-flex items-center gap-2.5 px-4 rounded-full border border-line bg-surface text-sm font-medium transition-colors hover:bg-raised">
+				<FcGoogle className="text-lg" /> Sign in
 			</button>
-			{returned.failed && <p role="alert" className="text-red-500">Sign-in did not finish. Try again.</p>}
+			{returned.failed && <p role="alert" className="absolute z-10 right-0 top-full mt-2 px-3 py-1.5 rounded-lg bg-surface w-48 text-sm text-red-500 shadow-lg">Sign-in did not finish. Try again.</p>}
 		</div>
 	);
 };

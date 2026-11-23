@@ -84,9 +84,19 @@ async function gmailAccessToken(clientId) {
   return token;
 }
 
+// The meeting time as the sender picked it: their time zone, on a 12-hour clock. A zone that is not real falls back to UTC
+function meetingTime(start, timeZone) {
+  const options = { weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true, timeZoneName: "short" };
+  try {
+    return start.toLocaleString("en-US", { ...options, timeZone: typeof timeZone === "string" && timeZone.length <= 64 ? timeZone : "UTC" }).replace(/\u202f/g, " ");
+  } catch {
+    return start.toLocaleString("en-US", { ...options, timeZone: "UTC" }).replace(/\u202f/g, " ");
+  }
+}
+
 // Options for the MIME composer, which encodes the headers so user-derived values cannot add any
-function buildEmail({ user, name, to, link, start }) {
-  const time = start && start.toLocaleString("en-GB", { dateStyle: "full", timeStyle: "short", timeZone: "UTC" }) + " UTC";
+function buildEmail({ user, name, to, link, start, timeZone }) {
+  const time = start && meetingTime(start, timeZone);
 
   // Plain text on purpose: a short note with one link is less likely to be filed as spam than a styled one
   const email = {
@@ -110,7 +120,7 @@ function buildEmail({ user, name, to, link, start }) {
 }
 
 // Validates the request, sends the email and returns the ack: { ok: true } or { error }. Never throws.
-async function sendInvite(socket, { to, room, when }, allowedOrigins, googleClientId, roomKey) {
+async function sendInvite(socket, { to, room, when, timeZone }, allowedOrigins, googleClientId, roomKey) {
   try {
     const user = socket.data.user;
     if (!user) return { error: "Sign in with Google to send invites." };
@@ -155,7 +165,7 @@ async function sendInvite(socket, { to, room, when }, allowedOrigins, googleClie
     let failure;
     try {
       const token = await gmailAccessToken(googleClientId);
-      const message = await new MailComposer(buildEmail({ user, name, to, link, start })).compile().build();
+      const message = await new MailComposer(buildEmail({ user, name, to, link, start, timeZone })).compile().build();
       const res = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },

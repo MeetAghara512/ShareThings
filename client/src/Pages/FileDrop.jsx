@@ -61,7 +61,7 @@ export const useFileDrop = active => {
 export const FileDropOverlay = ({ name }) => {
 	const ok = chat.getState().filesOk;
 	return (
-		<div className="absolute inset-0 z-30 pointer-events-none flex flex-col items-center justify-center gap-2 p-6 text-center bg-indigo-950/80 text-white border-2 border-dashed border-indigo-300 rounded-2xl">
+		<div className="absolute inset-0 z-30 pointer-events-none flex flex-col items-center justify-center gap-2 p-6 text-center bg-black/80 text-white border-2 border-dashed border-accent rounded-3xl">
 			<MdUploadFile className="text-5xl" />
 			<span className="font-semibold">{ok ? `Drop to send to ${name || "the other person"}` : "Files cannot be sent yet"}</span>
 		</div>

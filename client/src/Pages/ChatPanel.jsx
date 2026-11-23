@@ -5,7 +5,6 @@ import * as chat from "../Services/chat";
 import * as files from "../Services/files";
 import { useSocket } from "../useContext/SocketProvider";
 import { keyText, ariaKeys } from "../Services/shortcuts";
-import { ReactionButton } from "./Reactions";
 import { ClipBubble, ClipTray } from "./SharedClip";
 import * as clipboard from "../Services/clipboard";
 import { setUnreadTitle } from "../Services/title";
@@ -16,7 +15,7 @@ export const useChatOpen = () => useChat().open;
 
 const formatSize = bytes =>
 	bytes < 1024 ? `${Math.round(bytes)} B` : bytes < 1024 ** 2 ? `${(bytes / 1024).toFixed(1)} KB` : bytes < 1024 ** 3 ? `${(bytes / 1024 ** 2).toFixed(1)} MB` : `${(bytes / 1024 ** 3).toFixed(2)} GB`;
-const formatTime = at => new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+const formatTime = at => new Date(at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
 
 // The round Chat button in the call's control bar, with the number of unread messages and files.
 // className sets its shape and look its colours while closed; open, it is highlighted
@@ -36,7 +35,7 @@ export const ChatButton = ({ className, look }) => {
 			aria-label={unread ? `Chat, ${unread} unread` : "Chat"}
 			title={`Chat (${keyText("chat")})`}
 			aria-keyshortcuts={ariaKeys("chat")}
-			className={`relative ${className} ${open ? "bg-indigo-600 hover:bg-indigo-700 text-white" : look}`}
+			className={`relative ${className} ${open ? "bg-accent hover:bg-accent-hover text-on-accent" : look}`}
 		>
 			<MdChatBubbleOutline />
 			{unread > 0 && (
@@ -59,7 +58,7 @@ const FileItem = ({ item, remoteName, ready }) => {
 	const left = item.speed > 0 && (item.size - item.done) / item.speed;
 	const label = moving
 		? [`${percent}%`, left !== false && `${formatSize(item.speed)}/s`, left !== false && `${formatDuration(left)} left`].filter(Boolean).join(" \u00b7 ")
-		: item.status === "paused" ? `Paused at ${percent}%`
+		: item.status === "paused" ? (item.pausedByThem ? `Paused by ${remoteName || "the other person"} at ${percent}%` : `Paused at ${percent}%`)
 		: item.status === "offered" ? (item.mine ? `Waiting for ${remoteName || "the other person"} to accept` : item.eta ? `${item.rough ? "Up to" : "About"} ${formatDuration(item.eta)} to receive` : "Wants to send you this file")
 		// The other person left or is reloading; it continues by itself when both are in the call
 		: item.status === "waiting" ? (item.mine ? `Paused \u2014 waiting for ${item.to || "the other person"}` : `Paused at ${percent}% \u00b7 ${ready ? "continuing\u2026" : `waiting for ${item.name || "the other person"}`}`)
@@ -69,7 +68,7 @@ const FileItem = ({ item, remoteName, ready }) => {
 	const actions = item.status === "offered" && !item.mine ? [["Accept", files.accept, true], ["Decline", files.decline]]
 		: item.status === "relay" ? [["Send anyway", files.sendAnyway, true], ["Cancel", files.cancel]]
 		: moving ? [["Pause", files.pause], ["Cancel", files.cancel]]
-		: item.status === "paused" ? [["Resume", files.resume, true], ["Cancel", files.cancel]]
+		: item.status === "paused" ? (item.pausedByThem ? [["Cancel", files.cancel]] : [["Resume", files.resume, true], ["Cancel", files.cancel]])
 		: item.status === "unsaved" ? [["Save", files.saveFile, true]]
 		: ["queued", "preparing", "offered", "waiting"].includes(item.status) ? [["Cancel", files.cancel]]
 		: [];
@@ -93,7 +92,7 @@ const FileItem = ({ item, remoteName, ready }) => {
 					aria-valuenow={percent}
 					className="h-1.5 rounded-full bg-black/20 overflow-hidden"
 				>
-					<div className="h-full bg-green-500 transition-[width]" style={{ width: `${percent}%` }} />
+					<div className="h-full bg-accent transition-[width]" style={{ width: `${percent}%` }} />
 				</div>
 			)}
 			{actions.length > 0 && (
@@ -102,7 +101,7 @@ const FileItem = ({ item, remoteName, ready }) => {
 						<button
 							key={text}
 							onClick={() => action(item.id)}
-							className={`px-3 py-1 rounded-full text-xs font-semibold ${primary ? "bg-green-600 hover:bg-green-700 text-white" : "bg-black/15 hover:bg-black/25"}`}
+							className={`px-3 py-1 rounded-full text-xs font-semibold ${primary ? "bg-accent hover:bg-accent-hover text-on-accent" : "bg-black/15 hover:bg-black/25"}`}
 						>
 							{text}
 						</button>
@@ -114,7 +113,7 @@ const FileItem = ({ item, remoteName, ready }) => {
 				<a
 					href={item.url}
 					download={item.fileName}
-					className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-green-600 hover:bg-green-700 text-white text-xs font-semibold"
+					className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-accent hover:bg-accent-hover text-on-accent text-xs font-semibold"
 				>
 					<FaDownload /> Save
 				</a>
@@ -124,7 +123,7 @@ const FileItem = ({ item, remoteName, ready }) => {
 };
 
 // Chat and file sharing with the other person. Mounted while in the room; shown when opened
-const ChatPanel = ({ darkMode, remoteName }) => {
+const ChatPanel = ({ remoteName }) => {
 	const { ready, filesOk, open, items } = useChat();
 	const [text, setText] = useState("");
 	const [pending, setPending] = useState(null); // from the clipboard, waiting for Send
@@ -203,7 +202,7 @@ const ChatPanel = ({ darkMode, remoteName }) => {
 		else show(result);
 	};
 
-	const muted = darkMode ? "text-gray-400" : "text-gray-500";
+	const muted = "text-muted";
 	const iconButton = `shrink-0 w-10 h-10 rounded-full flex items-center justify-center transition-colors disabled:opacity-40 disabled:cursor-not-allowed`;
 
 	// Below lg (phones, tablets): not over the call but under it, between the video and the control bar (see Room.jsx)
@@ -212,15 +211,14 @@ const ChatPanel = ({ darkMode, remoteName }) => {
 			aria-label="Chat"
 			onDragOver={e => e.preventDefault()}
 			onDrop={handleDrop}
-			className={`fixed z-40 inset-x-0 bottom-0 h-[75vh] max-lg:static max-lg:order-first max-lg:flex-1 max-lg:min-h-0 max-lg:h-auto max-lg:mx-2 sm:max-lg:mx-4 max-lg:mt-2 max-lg:rounded-2xl max-lg:shadow-none lg:inset-x-auto lg:right-4 lg:bottom-20 lg:top-4 lg:h-auto lg:w-96 flex flex-col rounded-t-2xl lg:rounded-2xl shadow-2xl border ` +
-				(darkMode ? "bg-gray-800 border-gray-700 text-gray-100" : "bg-white border-gray-200 text-gray-900")}
+			className={`fixed z-40 inset-x-0 bottom-0 h-[75vh] max-lg:static max-lg:order-first max-lg:flex-1 max-lg:min-h-0 max-lg:h-auto max-lg:mx-2 sm:max-lg:mx-4 max-lg:mt-2 max-lg:rounded-2xl max-lg:shadow-none lg:inset-x-auto lg:right-4 lg:bottom-4 lg:top-4 lg:h-auto lg:w-96 flex flex-col rounded-t-3xl lg:rounded-3xl shadow-2xl border bg-surface border-line text-ink`}
 		>
-			<header className={`flex items-center justify-between gap-2 px-4 py-3 border-b ${darkMode ? "border-gray-700" : "border-gray-200"}`}>
-				<h3 className="font-semibold truncate">{remoteName ? `Chat with ${remoteName}` : "Chat"}</h3>
+			<header className={`flex items-center justify-between gap-2 px-4 py-3 border-b border-line`}>
+				<h3 className="font-display text-lg font-semibold truncate">{remoteName ? `Chat with ${remoteName}` : "Chat"}</h3>
 				<button
 					onClick={() => chat.setOpen(false)}
 					aria-label="Close chat"
-					className={`p-2 rounded-full ${darkMode ? "hover:bg-gray-700" : "hover:bg-gray-100"}`}
+					className={`p-2 rounded-full hover:bg-raised`}
 				>
 					<FaTimes />
 				</button>
@@ -238,7 +236,7 @@ const ChatPanel = ({ darkMode, remoteName }) => {
 							{item.mine ? "You" : item.name || "Guest"}{" · "}{formatTime(item.at)}
 						</span>
 						<div className={`max-w-[85%] px-3 py-2 rounded-2xl whitespace-pre-wrap [overflow-wrap:anywhere] ` +
-							(item.mine ? "bg-indigo-600 text-white" : darkMode ? "bg-gray-700" : "bg-gray-100")}
+							(item.mine && item.kind === "text" ? "bg-accent text-on-accent font-medium" : "bg-raised")}
 						>
 							{item.kind === "text" ? item.text : item.kind === "clip" ? <ClipBubble item={item} /> : <FileItem item={item} remoteName={remoteName} ready={ready} />}
 						</div>
@@ -246,10 +244,10 @@ const ChatPanel = ({ darkMode, remoteName }) => {
 				))}
 			</div>
 
-			<form onSubmit={handleSubmit} className={`p-3 space-y-2 border-t ${darkMode ? "border-gray-700" : "border-gray-200"}`}>
+			<form onSubmit={handleSubmit} className={`p-3 space-y-2 border-t border-line`}>
 				{!ready && <p className={`text-xs ${muted}`}>Chat starts when the other person is connected.</p>}
 				{ready && !filesOk && <p className={`text-xs ${muted}`}>Ask them to reload the page to send files.</p>}
-				{pending && <ClipTray pending={pending} canSend={clipOk} darkMode={darkMode} onSend={sendClip} onClose={() => setPending(null)} />}
+				{pending && <ClipTray pending={pending} canSend={clipOk} onSend={sendClip} onClose={() => setPending(null)} />}
 				<div className="flex items-center gap-1 sm:gap-2">
 					<button
 						type="button"
@@ -257,7 +255,7 @@ const ChatPanel = ({ darkMode, remoteName }) => {
 						disabled={!filesOk}
 						aria-label="Send a file"
 						title="Send a file"
-						className={`${iconButton} ${darkMode ? "hover:bg-gray-700" : "hover:bg-gray-100"}`}
+						className={`${iconButton} hover:bg-raised`}
 					>
 						<FaPaperclip />
 					</button>
@@ -268,7 +266,7 @@ const ChatPanel = ({ darkMode, remoteName }) => {
 						disabled={!clipOk}
 						aria-label="Share from clipboard"
 						title="Share from clipboard"
-						className={`${iconButton} text-lg ${darkMode ? "hover:bg-gray-700" : "hover:bg-gray-100"}`}
+						className={`${iconButton} text-lg hover:bg-raised`}
 					>
 						<MdContentPaste />
 					</button>
@@ -282,12 +280,9 @@ const ChatPanel = ({ darkMode, remoteName }) => {
 						maxLength={chat.MAX_TEXT}
 						placeholder="Type a message"
 						aria-label="Message"
-						className={`flex-1 min-w-0 px-4 py-2 rounded-full border text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 disabled:opacity-50 ` +
-							(darkMode ? "bg-gray-700 border-gray-600 placeholder-gray-400" : "bg-white border-gray-300 placeholder-gray-500")}
+						className={`flex-1 min-w-0 px-4 py-2 rounded-full border text-sm focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50 bg-ground border-line placeholder-muted`}
 					/>
-					{/* On phones the bar has no room for it */}
-					<ReactionButton className={iconButton} look={darkMode ? "hover:bg-gray-700" : "hover:bg-gray-100"} on="bg-indigo-600 text-white" darkMode={darkMode} boxClass="sm:hidden" end />
-					<button type="submit" disabled={!ready || !text.trim()} aria-label="Send" className={`${iconButton} bg-indigo-600 hover:bg-indigo-700 text-white`}>
+					<button type="submit" disabled={!ready || !text.trim()} aria-label="Send" className={`${iconButton} bg-accent hover:bg-accent-hover text-on-accent`}>
 						<FaPaperPlane />
 					</button>
 				</div>

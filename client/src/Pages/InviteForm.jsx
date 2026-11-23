@@ -2,14 +2,15 @@ import React, { useState } from "react";
 import { FaEnvelope } from "react-icons/fa";
 import { useSocket } from "../useContext/SocketProvider";
 import { SIGN_IN_PAGE, useAuth } from "../useContext/AuthProvider";
+import TimePicker from "./TimePicker";
 
 // Shown while waiting in a room: a signed-in user can have the room link emailed to a guest
-const InviteForm = ({ roomId, darkMode }) => {
+const InviteForm = ({ roomId }) => {
 	const socket = useSocket();
 	const { user } = useAuth();
 
 	const [to, setTo] = useState("");
-	const [when, setWhen] = useState("");
+	const [when, setWhen] = useState(null);
 	const [sending, setSending] = useState(false);
 	const [status, setStatus] = useState(null); // { ok, text }
 
@@ -17,7 +18,7 @@ const InviteForm = ({ roomId, darkMode }) => {
 		return (
 			<div className="flex flex-col items-center gap-2 text-sm">
 				{/* In another tab, because leaving this page would end the call. The sign-in reaches this tab by itself */}
-				<a href={SIGN_IN_PAGE} target="_blank" rel="noopener noreferrer" className="px-4 py-2 rounded-full border border-gray-400 font-medium hover:bg-gray-500/10">
+				<a href={SIGN_IN_PAGE} target="_blank" rel="noopener noreferrer" className="px-4 py-2 rounded-full border border-line font-medium hover:bg-raised">
 					Sign in (opens a new tab)
 				</a>
 				<p className="opacity-60 text-center">Sign in there to invite someone by email. This call stays open.</p>
@@ -27,11 +28,9 @@ const InviteForm = ({ roomId, darkMode }) => {
 
 	const handleSubmit = e => {
 		e.preventDefault();
-		const time = when ? new Date(when) : null;
-		if (time && isNaN(time)) return setStatus({ ok: false, text: "Pick a valid meeting time." });
 		setSending(true);
 		setStatus(null);
-		const payload = { to, room: roomId, when: time ? time.toISOString() : undefined };
+		const payload = { to, room: roomId, when: when ? when.toISOString() : undefined, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone };
 		// The timeout re-enables the button if the server never answers (e.g. the connection dropped)
 		socket.timeout(15000).emit("invite:send", payload, (err, res) => {
 			setSending(false);
@@ -43,8 +42,7 @@ const InviteForm = ({ roomId, darkMode }) => {
 		});
 	};
 
-	const inputClass = "w-full px-4 py-2 rounded-lg border focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm font-normal " +
-		(darkMode ? "bg-gray-700 border-gray-600 placeholder-gray-400" : "bg-white border-gray-300 placeholder-gray-500");
+	const inputClass = "w-full px-4 py-2 rounded-lg border focus:outline-none focus:ring-2 focus:ring-accent text-sm font-normal bg-ground border-line placeholder-muted";
 
 	return (
 		<form onSubmit={handleSubmit} className="w-full max-w-xs flex flex-col gap-3 text-left text-sm">
@@ -60,20 +58,14 @@ const InviteForm = ({ roomId, darkMode }) => {
 					className={inputClass}
 				/>
 			</label>
-			<label className="flex flex-col gap-1 font-medium">
+			<div className="flex flex-col gap-1 font-medium">
 				<span>Meeting time <span className="opacity-60 font-normal">(optional)</span></span>
-				<input
-					type="datetime-local"
-					value={when}
-					onChange={e => setWhen(e.target.value)}
-					className={inputClass}
-					style={{ colorScheme: darkMode ? "dark" : "light" }}
-				/>
-			</label>
+				<TimePicker value={when} onChange={setWhen} />
+			</div>
 			<button
 				type="submit"
 				disabled={sending}
-				className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white px-5 py-2 rounded-full flex items-center justify-center gap-2 shadow-sm transition-colors"
+				className="bg-accent hover:bg-accent-hover disabled:opacity-60 text-on-accent px-5 py-2 rounded-full flex items-center justify-center gap-2 shadow-sm transition-colors"
 			>
 				<FaEnvelope /> {sending ? "Sending..." : "Send invite"}
 			</button>
