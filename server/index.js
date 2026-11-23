@@ -351,7 +351,7 @@ io.on("connection", socket => {
   });
 
   // The first page asks when it opens, since it may open after the numbers were sent
-  socket.on("stats:get", (data, ack) => !statsLimited(socket) && typeof ack === "function" && ack(stats.current()));
+  socket.on("stats:get", (data, ack) => typeof ack === "function" && ack(statsLimited(socket) ? { limited: true } : stats.current()));
 
   // closing: the tab is closing or reloading, so it may be back in a moment. A guest keeps their seat for SEAT_GRACE,
   // so a reload does not have to ask the host again; the host can still remove them meanwhile

@@ -38,7 +38,8 @@ const NetworkCheck = () => {
 				{checking ? "Checking network…" : result ? "Check again" : "Check my network"}
 			</button>
 			<div aria-live="polite">
-				{result && (
+				{result?.limited && <p className="font-medium text-amber-500">Too many checks, try again in a minute</p>}
+				{result && !result.limited && (
 					<>
 						<p className={`font-medium ${result.good ? "text-green-500" : "text-amber-500"}`}>{result.good ? "Good network" : "Weak network"}</p>
 						<p className="opacity-70">

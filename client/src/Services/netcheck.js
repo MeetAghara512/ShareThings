@@ -7,6 +7,7 @@ const PING_TIMEOUT = 2000;
 const ROUTE_TIMEOUT = 5000;
 // The server can be far away, so only an answer this slow (in ms) counts as a weak network
 const SLOW = 800;
+const LIMITED = "limited"; // the server's answer past its limit: says nothing about the network
 // Only for this check, no relay login. Two servers show a router that picks a new port per destination (symmetric
 // NAT), which direct connections usually cannot get through
 const STUN = [{ urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] }];
@@ -69,7 +70,7 @@ const findRoute = signal => new Promise(resolve => {
 const ping = socket => new Promise(resolve => {
 	if (!socket.connected) return resolve(null);
 	const sent = performance.now();
-	socket.timeout(PING_TIMEOUT).emit("stats:get", {}, err => resolve(err ? null : performance.now() - sent));
+	socket.timeout(PING_TIMEOUT).emit("stats:get", {}, (err, answer) => resolve(err ? null : answer?.limited ? LIMITED : performance.now() - sent));
 });
 
 const roundTrips = async (socket, signal) => {
@@ -77,13 +78,15 @@ const roundTrips = async (socket, signal) => {
 	while (times.length < PINGS && !signal.aborted) {
 		if (times.length) await new Promise(wake => setTimeout(wake, PING_GAP));
 		times.push(await ping(socket));
+		if (times.at(-1) === LIMITED) break;
 	}
 	return times;
 };
 
-// { asked, answered, ms (the middle answer), route ("direct", "relay" or null if unknown), good }
+// { asked, answered, ms (the middle answer), route ("direct", "relay" or null if unknown), good }, or { limited: true }
 export const checkNetwork = async (socket, signal) => {
 	const [times, route] = await Promise.all([roundTrips(socket, signal), findRoute(signal)]);
+	if (times.includes(LIMITED)) return { limited: true };
 	const answers = times.filter(t => t !== null).sort((a, b) => a - b);
 	const ms = answers.length ? Math.round(answers[Math.floor(answers.length / 2)]) : null;
 	return { asked: times.length, answered: answers.length, ms, route, good: answers.length === PINGS && ms < SLOW };
