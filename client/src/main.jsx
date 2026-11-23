@@ -5,13 +5,10 @@ import App from './App';
 import './tailwind.css'; // after our own CSS, the same order as when the CDN script added it
 import { BrowserRouter } from 'react-router-dom';
 import { SocketProvider } from './useContext/SocketProvider';
-import { finishNewRoom } from './Services/roomSecret';
 
 // The free server sleeps when idle and needs up to a minute to start: wake it as early as possible.
 // The answer is not needed, so no CORS setup is either
 fetch(new URL("/health", import.meta.env.REACT_APP_SOCKET_SERVER_URL || window.location.origin), { mode: "no-cors" }).catch(() => {});
-
-finishNewRoom(); // before the router reads the address
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(

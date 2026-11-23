@@ -60,7 +60,7 @@ Server (in `server/.env`, read at start, or in the environment). All are optiona
 
 App: `REACT_APP_SOCKET_SERVER_URL` is the signaling server's address; it is built into the app. Leave it unset when the app and the server are served from one address (the Docker setup below).
 
-Google sign-in (only needed for email invites) works only on addresses registered for the app's Google OAuth client, such as `http://localhost:3000`. The sites allowed to use the server and to appear in invite links are listed in `ALLOWED_ORIGINS` in `server/index.js`; add yours there if you deploy somewhere else.
+Google sign-in (only needed for email invites) redirects to Google and back, so each site's address with a trailing slash, such as `http://localhost:3000/`, must be listed under **Authorized redirect URIs** of the app's Google OAuth client. The sites allowed to use the server and to appear in invite links are listed in `ALLOWED_ORIGINS` in `server/index.js`; add yours there if you deploy somewhere else.
 
 ## Docker
 
@@ -76,7 +76,7 @@ Then open http://localhost:3000. nginx in the client container serves the app an
 - **App:** a Static Site with root directory `client`, build command `npm ci && npm run build`, publish directory `build`, and `REACT_APP_SOCKET_SERVER_URL` set to the server's address. Also set:
   - **Redirects/Rewrites:** `/*` to `/index.html` as a Rewrite, so room links like `/room/abc-defg-hij` open the app.
   - **Headers** for path `/*`, with `<server host>` replaced by the server's host name (without it the app cannot reach the server):
-    - `Content-Security-Policy`: `default-src 'self'; script-src 'self' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; img-src 'self' data:; connect-src 'self' https://accounts.google.com/gsi/ https://<server host> wss://<server host>; frame-src https://accounts.google.com/gsi/; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'`
+    - `Content-Security-Policy`: `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://<server host> wss://<server host>; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'`
     - `X-Content-Type-Options`: `nosniff`
     - `Referrer-Policy`: `strict-origin-when-cross-origin`
     - `Permissions-Policy`: `camera=(self), microphone=(self), display-capture=(self)`
