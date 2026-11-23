@@ -4,7 +4,7 @@ import { ChatButton } from "./ChatPanel";
 import { ReactionButton } from "./Reactions";
 import InviteForm from "./InviteForm";
 import { HELP, troubleText } from "../Services/devices";
-import { SHORTCUTS, keyText, ariaKeys } from "../Services/shortcuts";
+import { CAN_SHARE_SCREEN, SHORTCUTS, keyText, ariaKeys } from "../Services/shortcuts";
 import { MODES } from "../Services/quality";
 
 // Time of day, as in the corner of Google Meet
@@ -95,9 +95,6 @@ const MoreMenu = ({ darkMode, quality, onQuality, onToggleDarkMode, removeName, 
 	);
 };
 
-// Phones cannot share their screen (iPhone Safari and Android Chrome have no getDisplayMedia): no button there
-const CAN_SHARE_SCREEN = !!navigator.mediaDevices?.getDisplayMedia;
-
 // The call's one row of controls, like Google Meet: time, room and call status on the left, round
 // icon buttons in the middle, meeting details and more options (video quality, theme) on the right.
 // trouble: a mic or camera that is blocked or missing; its button is red with a "!" and its click tries to fix it
@@ -183,7 +180,7 @@ export const MeetingCard = ({ darkMode, roomId, alone, copied, onCopy, onClose }
 			<div className="hidden [@media(pointer:fine)]:block space-y-1.5 pt-1">
 				<h4 className="font-medium">Keyboard shortcuts</h4>
 				<dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
-					{SHORTCUTS.map(s => (
+					{SHORTCUTS.filter(s => s.action !== "share" || CAN_SHARE_SCREEN).map(s => (
 						<React.Fragment key={s.action}>
 							<dt><kbd className="font-mono text-xs">{keyText(s.action)}</kbd></dt>
 							<dd className="opacity-80">{s.label}</dd>

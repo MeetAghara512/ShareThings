@@ -7,7 +7,7 @@ const { Server } = require("socket.io");
 const { OAuth2Client } = require("google-auth-library");
 const { sendInvite } = require("./invite");
 const { getIceServers } = require("./turn");
-const { limitConnections, joinLimited, peekLimited, waitingLimited } = require("./limits");
+const { limitConnections, joinLimited, peekLimited, statsLimited, waitingLimited } = require("./limits");
 const liveStats = require("./stats");
 
 const app = express();
@@ -328,18 +328,19 @@ io.on("connection", socket => {
     if (typeof ack === "function") ack(result);
   });
 
-  // Names of the people in a room, for the join screen. Does not join it.
+  // How many people are in a room, for the join screen. Does not join it.
   // A seat kept for this tab itself (its connection dropped, then it reloaded) is not counted
   socket.on("room:peek", ({ room, clientId }, ack) => {
     if (peekLimited(socket, ack)) return;
     if (typeof room !== "string" || !room || typeof ack !== "function") return;
     // Only how many: anyone with the room code can ask, so never who (names are shown once you are in the call)
     const count = othersInRoom(room, socket, validClientId(clientId)).length;
-    ack({ count, full: count >= MAX_ROOM_SIZE });
+    // names: only for tabs opened before the count existed, which crash without it. No real name. Remove after a release
+    ack({ count, full: count >= MAX_ROOM_SIZE, names: Array(count).fill("Someone") });
   });
 
   // The first page asks when it opens, since it may open after the numbers were sent
-  socket.on("stats:get", (data, ack) => typeof ack === "function" && ack(stats.current()));
+  socket.on("stats:get", (data, ack) => !statsLimited(socket) && typeof ack === "function" && ack(stats.current()));
 
   // closing: the tab is closing or reloading, so a host may be back in a moment
   socket.on("room:leave", ({ room, closing }) => {

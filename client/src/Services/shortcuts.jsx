@@ -2,6 +2,8 @@ import { useEffect, useRef } from "react";
 
 // Keyboard shortcuts in the call, as in Google Meet. ⌘ on a Mac and Ctrl elsewhere are shown; both work everywhere
 const MAC = /mac|iphone|ipad/i.test(navigator.userAgentData?.platform || navigator.platform || navigator.userAgent); // "macOS", "MacIntel"
+// Phones cannot share their screen (iPhone Safari and Android Chrome have no getDisplayMedia): no button or shortcut there
+export const CAN_SHARE_SCREEN = !!navigator.mediaDevices?.getDisplayMedia;
 
 export const SHORTCUTS = [
 	{ action: "mic", key: "D", shift: false, label: "Turn the microphone on or off" },
@@ -34,7 +36,7 @@ export const useCallShortcuts = (actions, enabled) => {
 		if (!enabled) return;
 		const handleKey = e => {
 			if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
-			const shortcut = SHORTCUTS.find(s => e.code === `Key${s.key}` && s.shift === e.shiftKey);
+			const shortcut = SHORTCUTS.find(s => e.code === `Key${s.key}` && s.shift === e.shiftKey && (s.action !== "share" || CAN_SHARE_SCREEN));
 			const target = e.target;
 			if (!shortcut || target?.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target?.tagName)) return;
 			e.preventDefault();
