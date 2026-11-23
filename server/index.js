@@ -52,6 +52,8 @@ const CANNOT_REMOVE = "You can't remove this person.";
 const DENIED = "You were not let in.";
 const CANNOT_ANSWER = "That request is no longer open.";
 const NO_SEAT = "The call is full.";
+const ASKING_ELSEWHERE = "You are already asking to join another room.";
+const OPENED_ELSEWHERE = "This call was opened in another tab.";
 const MAX_WAITING = 5; // people asking to join one room at the same time
 const MAX_WAITING_PER_ADDRESS = 2; // of those, from one internet address
 const TOO_MANY_WAITING = "Too many people are waiting, try again soon";
@@ -218,14 +220,14 @@ const mustAsk = (room, socket, tab) => {
 function askHost(room, socket, tab, name, resume, ack) {
   const host = hosts.get(room);
   const mine = socket.data.request;
-  if (mine && mine.room !== room) return ack({ full: true });
+  if (mine && mine.room !== room) return ack({ full: true, error: ASKING_ELSEWHERE });
   const key = tab ?? `socket:${socket.id}`;
   if (mine) host.waiting.delete(mine.id);
   for (const [id, request] of host.waiting) {
     if (request.key !== key) continue; // the same tab on a newer connection replaces its request
     host.waiting.delete(id);
     request.socket.data.request = null;
-    request.ack({ full: true });
+    request.ack({ full: true, error: OPENED_ELSEWHERE });
   }
   if (host.waiting.size >= MAX_WAITING || waitingLimited(socket, [...host.waiting.values()].map(r => r.socket), MAX_WAITING_PER_ADDRESS)) {
     socket.data.request = null;
