@@ -180,8 +180,9 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	}, [socket, remoteSocketId]);
 
 	// Tell the other side whether we have a camera and a mic, whether they are on and whether we share our screen
-	const hasCamera = !!myStream?.getVideoTracks().length;
-	const hasMic = !!myStream?.getAudioTracks().length;
+	// Allowed while turned off: no track until its button is pressed, but it counts as a device that is off
+	const hasCamera = !!myStream?.getVideoTracks().length || trouble.video === "off";
+	const hasMic = !!myStream?.getAudioTracks().length || trouble.audio === "off";
 
 	// Video sized to the other screen, the camera smaller while we share, stepped down (or paused) on a weak network
 	const { mode: qualityMode, setMode: setQualityMode, paused, onStats } = useAdaptiveQuality({
@@ -553,7 +554,10 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	// A red mic or camera button: ask again where the browser still can (the click allows the prompt), else
 	// show the fix. A device that starts goes into its lane with replaceTrack: no new offer
 	const fixDevice = useCallback(async kind => {
-		if (troubleRef.current[kind] === "system" || await permission(kind) === "denied") return setHelp(kind);
+		if (troubleRef.current[kind] === "system" || await permission(kind) === "denied") {
+			setTrouble(t => (t[kind] === "off" ? { ...t, [kind]: "blocked" } : t));
+			return setHelp(kind);
+		}
 		try {
 			const track = await openDevice(kind, prefsRef.current[kind === "video" ? "videoId" : "audioId"]);
 			const current = myStreamRef.current;
@@ -591,7 +595,12 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	offRef.current = { audio: muted, video: cameraOff };
 	useEffect(() => {
 		if (!joined) return;
-		const stops = ["audio", "video"].map(kind => onGranted(kind, () => troubleRef.current[kind] && !offRef.current[kind] && fixDevice(kind)));
+		const stops = ["audio", "video"].map(kind => onGranted(kind, () => {
+			if (!troubleRef.current[kind]) return;
+			if (!offRef.current[kind]) return fixDevice(kind);
+			setTrouble(t => ({ ...t, [kind]: "off" }));
+			setHelp(h => (h === kind ? null : h));
+		}));
 		return () => stops.forEach(stop => stop());
 	}, [joined, fixDevice]);
 
@@ -617,6 +626,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	// Toggle mic on/off
 	const handleToggleMic = () => {
 		if (!myStreamRef.current) return;
+		if (trouble.audio === "off" && !myStreamRef.current.getAudioTracks().length) return fixDevice("audio");
 		myStreamRef.current.getAudioTracks().forEach(track => track.enabled = muted);
 		setMuted(!muted);
 	};
@@ -624,6 +634,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	// Toggle camera on/off; the shared screen is not affected
 	const handleToggleCamera = () => {
 		if (!myStreamRef.current) return;
+		if (trouble.video === "off" && !myStreamRef.current.getVideoTracks().length) return fixDevice("video");
 		myStreamRef.current.getVideoTracks().forEach(track => track.enabled = cameraOff);
 		setCameraOff(!cameraOff);
 	};
