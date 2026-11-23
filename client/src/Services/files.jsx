@@ -346,6 +346,7 @@ const onOffer = async msg => {
 		// The same file again: after a new connection, or picked again after the sender reloaded
 		incoming.delete(t.id);
 		incoming.set((t.id = id), t);
+		t.peer = link?.peer;
 		t.paused ||= msg.paused === true;
 		if (t.sink) return t.paused ? setStatus(t, "paused") : pull(t);
 		// Listed again after a reload (restore): open its file and continue where it stopped
@@ -353,7 +354,7 @@ const onOffer = async msg => {
 		return;
 	}
 	const rate = Number.isFinite(msg.rate) && msg.rate > 0 ? msg.rate : 0;
-	t = Object.assign(receiver(msg), { status: "offered", from: getPeerName(), room: location.pathname });
+	t = Object.assign(receiver(msg), { status: "offered", from: getPeerName(), peer: link?.peer, room: location.pathname });
 	incoming.set(id, t);
 	t.item = add({ kind: "file", mine: false, name: t.from, fileName: t.name, size, done: 0, status: "offered", eta: rate && size / rate, rough: msg.measured !== true });
 	bump();
@@ -679,6 +680,10 @@ registerFiles({
 	// Removed from the call: what was still going to them ends here, even if the same tab comes back
 	forget(id) {
 		outgoing.filter(t => t.peer === id).forEach(t => end(t, "cancelled"));
+	},
+	// Removed from the call: unfinished files from them are cancelled. Finished ones are no longer in this list
+	cancelFrom(id) {
+		[...incoming.values()].filter(t => t.peer === id).forEach(t => cancel(t.item));
 	},
 	// Leaving the room: stop everything; unfinished files in private storage stay for a later visit
 	clear() {
