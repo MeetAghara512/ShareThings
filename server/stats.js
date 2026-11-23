@@ -6,7 +6,7 @@ module.exports = function liveStats(io) {
   const nsp = io.of("/");
 
   // Counted from the connections that exist right now; ones refused by the limits never get here
-  const current = () => {
+  const count = () => {
     const tabs = new Set();
     // A tab's id (sent when it joins a room), so a tab with an old connection not yet gone counts once
     for (const socket of nsp.sockets.values()) tabs.add(socket.data.clientId || socket.id);
@@ -17,10 +17,23 @@ module.exports = function liveStats(io) {
     return { online: tabs.size, calls };
   };
 
+  // The last count, so asking again and again costs nothing. Anyone coming, going or changing rooms clears it, so the
+  // next answer is fresh. The age limit covers a tab that changes its id without changing rooms
+  let counted = null;
+  let countedAt = 0;
+  const current = () => {
+    if (!counted || Date.now() - countedAt >= EVERY) {
+      counted = count();
+      countedAt = Date.now();
+    }
+    return counted;
+  };
+
   let sent = current();
   let sentAt = 0;
   let timer = null;
   const changed = () => {
+    counted = null;
     timer ??= setTimeout(() => {
       timer = null;
       const now = current();
