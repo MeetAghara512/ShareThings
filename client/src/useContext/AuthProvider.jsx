@@ -54,7 +54,8 @@ export const AuthProvider = ({ children }) => {
 export const SIGN_IN_PAGE = "/?signin=1";
 const SIGN_IN_CHANNEL = "sharethings.signin"; // the new tab says here that it opened
 const TAB_WAIT = 4000; // no word from it by then: the browser blocked it
-export const isSignInTab = () => new URLSearchParams(window.location.search).has("signin") && window.history.length === 1 && !window.opener;
+const hasRoomInHistory = () => !!window.navigation?.entries().some(({ url }) => url && /^\/(room|left)\//.test(new URL(url).pathname));
+export const isSignInTab = () => new URLSearchParams(window.location.search).has("signin") && !window.opener && !hasRoomInHistory();
 
 let googleScript;
 // With Google's script on this page, Back and Forward are fresh page loads too, so a room never shares a page with it
@@ -145,7 +146,6 @@ export const GoogleSignInButton = () => {
 			{step === "opened" && <p role="status" className="opacity-70">Finish signing in in the new tab.</p>}
 			{step === "blocked" && <p role="alert" className="text-red-500">The sign-in tab could not open. Allow pop-ups for this site and try again. You can still join a call without signing in.</p>}
 			{step === "loading" && <p role="status" className="opacity-70">Loading Google sign-in…</p>}
-			{step === "ready" && <p className="opacity-70">This tab is only for signing in.</p>}
 			{step === "failed" && <p role="alert" className="text-red-500">Google sign-in could not be loaded. You can still join a call without signing in.</p>}
 			<div ref={buttonRef} />
 		</div>

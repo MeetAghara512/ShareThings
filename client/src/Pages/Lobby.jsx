@@ -17,6 +17,7 @@ const Lobby = ({ darkMode, toggleDarkMode }) => {
 	const { user, signOut } = useAuth();
 	const [room, setRoom] = useState("");
 	const navigate = useNavigate();
+	const signInOnly = isSignInTab(); // this tab was opened just for signing in
 
 	// The sign-in tab's job is done: the other tabs got it through localStorage
 	useEffect(() => {
@@ -64,7 +65,7 @@ const Lobby = ({ darkMode, toggleDarkMode }) => {
 						(darkMode ? "text-indigo-300" : "text-indigo-600")
 					}
 				>
-					Join a Video Call Room
+					{signInOnly ? "Sign in to ShareThings" : "Join a Video Call Room"}
 				</h2>
 
 				<form
@@ -78,7 +79,7 @@ const Lobby = ({ darkMode, toggleDarkMode }) => {
 					<div className="space-y-2 text-sm">
 						{user ? (
 							<div className="flex items-center justify-between gap-3">
-								{isSignInTab() ? <span>You're signed in. You can close this tab.</span> : <span className="truncate">Signed in as <strong>{user.email}</strong></span>}
+								{signInOnly ? <span>You're signed in. You can close this tab.</span> : <span className="truncate">Signed in as <strong>{user.email}</strong></span>}
 								<button type="button" onClick={signOut} className="underline shrink-0 hover:text-indigo-400">
 									Sign out
 								</button>
@@ -86,11 +87,12 @@ const Lobby = ({ darkMode, toggleDarkMode }) => {
 						) : (
 							<>
 								<GoogleSignInButton />
-								<p className="opacity-60">Optional. You can join a call without signing in.</p>
+								{!signInOnly && <p className="opacity-60">Optional. You can join a call without signing in.</p>}
 							</>
 						)}
 					</div>
 
+					{!signInOnly && <>
 					<div className="space-y-2">
 						<label htmlFor="room" className="block text-sm font-medium">
 							Room code <span className="opacity-60">(leave empty to create a new room)</span>
@@ -117,6 +119,7 @@ const Lobby = ({ darkMode, toggleDarkMode }) => {
 					</button>
 					<LiveCount />
 					<ServerStatus />
+					</>}
 				</form>
 			</main>
 
