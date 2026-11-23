@@ -81,4 +81,7 @@ function peekLimited(socket, ack) {
 // counts it as a lost round trip, never as a good one
 const statsLimited = socket => !isLocal(socket) && !allow(counts.socketStats, socket.id, MAX_STATS_PER_SOCKET);
 
-module.exports = { clientAddress, limitConnections, joinLimited, peekLimited, statsLimited };
+// True when this address already has max of the sockets waiting to be let in to one room
+const waitingLimited = (socket, waiting, max) => !isLocal(socket) && waiting.filter(s => clientAddress(s) === clientAddress(socket)).length >= max;
+
+module.exports = { clientAddress, limitConnections, joinLimited, peekLimited, statsLimited, waitingLimited };

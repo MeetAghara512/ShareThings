@@ -44,11 +44,11 @@ const chime = () => {
 	}
 };
 
-export const noticeJoin = name => {
+export const noticeJoin = (name, what = "joined your call") => {
 	if (!document.hidden || notifyPermission() !== "granted") return;
 	try {
 		chime();
-		const notice = new Notification(`${name || "Someone"} joined your call`, { icon: "/icon.svg", tag: "sharethings-join" });
+		const notice = new Notification(`${name || "Someone"} ${what}`, { icon: "/icon.svg", tag: "sharethings-join" });
 		notice.onclick = () => {
 			window.focus();
 			notice.close();

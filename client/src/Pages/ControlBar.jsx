@@ -98,7 +98,7 @@ const MoreMenu = ({ darkMode, quality, onQuality, onToggleDarkMode, removeName, 
 // The call's one row of controls, like Google Meet: time, room and call status on the left, round
 // icon buttons in the middle, meeting details and more options (video quality, theme) on the right.
 // trouble: a mic or camera that is blocked or missing; its button is red with a "!" and its click tries to fix it
-const ControlBar = ({ darkMode, roomId, status, muted, cameraOff, trouble = {}, isScreen, infoOpen, quality, onQuality, onToggleMic, onToggleCamera, onToggleShare, onToggleInfo, onToggleDarkMode, removeName, onRemove, onLeave }) => {
+const ControlBar = ({ darkMode, roomId, status, muted, cameraOff, trouble = {}, isScreen, infoOpen, quality, onQuality, onToggleMic, onToggleCamera, onToggleShare, onToggleInfo, onToggleDarkMode, removeName, onRemove, onLeave, showInfo = true }) => {
 	const round = "w-10 h-10 sm:w-12 sm:h-12 shrink-0 rounded-full flex items-center justify-center text-xl transition-colors";
 	const idle = darkMode ? "bg-gray-700 hover:bg-gray-600 text-white" : "bg-gray-200 hover:bg-gray-300 text-gray-800";
 	const off = "bg-red-600 hover:bg-red-700 text-white";
@@ -137,7 +137,7 @@ const ControlBar = ({ darkMode, roomId, status, muted, cameraOff, trouble = {}, 
 			</div>
 
 			<div className="flex items-center justify-end gap-1 sm:gap-2">
-				{button("Meeting details", onToggleInfo, infoOpen ? on : plain, <MdInfoOutline />)}
+				{showInfo && button("Meeting details", onToggleInfo, infoOpen ? on : plain, <MdInfoOutline />)}
 				<MoreMenu darkMode={darkMode} quality={quality} onQuality={onQuality} onToggleDarkMode={onToggleDarkMode} removeName={removeName} onRemove={onRemove} className={`${round} ${plain}`} />
 			</div>
 		</footer>
