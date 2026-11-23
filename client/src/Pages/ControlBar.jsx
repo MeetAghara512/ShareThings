@@ -4,7 +4,7 @@ import { ChatButton } from "./ChatPanel";
 import { ReactionButton } from "./Reactions";
 import InviteForm from "./InviteForm";
 import { HELP, troubleText } from "../Services/devices";
-import { SHORTCUTS, keyText, ariaKeys } from "../Services/shortcuts";
+import { CAN_SHARE_SCREEN, SHORTCUTS, keyText, ariaKeys } from "../Services/shortcuts";
 import { MODES } from "../Services/quality";
 
 // Time of day, as in the corner of Google Meet
@@ -88,9 +88,6 @@ const MoreMenu = ({ darkMode, quality, onQuality, onToggleDarkMode, className })
 		</div>
 	);
 };
-
-// Phones cannot share their screen (iPhone Safari and Android Chrome have no getDisplayMedia): no button there
-const CAN_SHARE_SCREEN = !!navigator.mediaDevices?.getDisplayMedia;
 
 // The call's one row of controls, like Google Meet: time, room and call status on the left, round
 // icon buttons in the middle, meeting details and more options (video quality, theme) on the right.
