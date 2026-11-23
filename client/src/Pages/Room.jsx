@@ -621,6 +621,8 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		track.stop();
 		track.onended?.();
 		setTrouble(t => ({ ...t, [track.kind]: "off" }));
+		if (track.kind === "video") setCameraOff(true); // so the buttons and the other person see it off too
+		else setMuted(true);
 	});
 
 	// Toggle mic on/off
