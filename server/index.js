@@ -45,7 +45,7 @@ const SERVER_ID = randomBytes(8).toString("hex");
 // Bump when client and server must change together (same number as PROTOCOL_VERSION in
 // client/src/Pages/VersionBanner.jsx). Every new connection is told it, so a tab opened before a deploy
 // can offer a reload
-const PROTOCOL_VERSION = 1;
+const PROTOCOL_VERSION = 2;
 
 // Public identifier of the Google OAuth client (not a secret). Must match GOOGLE_CLIENT_ID in client/src/useContext/AuthProvider.jsx
 const GOOGLE_CLIENT_ID = "123263407226-ltqv9qfv6s58ocr5nvgk2vggoa0addhf.apps.googleusercontent.com";
@@ -198,8 +198,9 @@ io.on("connection", socket => {
   socket.on("room:peek", ({ room, clientId }, ack) => {
     if (peekLimited(socket, ack)) return;
     if (typeof room !== "string" || !room || typeof ack !== "function") return;
-    const others = othersInRoom(room, socket, validClientId(clientId));
-    ack({ names: others.map(o => o.name ?? "Guest"), full: others.length >= MAX_ROOM_SIZE });
+    // Only how many: anyone with the room code can ask, so never who (names are shown once you are in the call)
+    const count = othersInRoom(room, socket, validClientId(clientId)).length;
+    ack({ count, full: count >= MAX_ROOM_SIZE });
   });
 
   socket.on("room:leave", ({ room }) => {
