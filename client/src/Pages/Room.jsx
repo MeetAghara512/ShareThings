@@ -10,6 +10,7 @@ import CallStatus from "./CallStatus";
 import Preview from "./Preview";
 import ChatPanel, { useChatOpen } from "./ChatPanel";
 import ControlBar, { DeviceHelp, MeetingCard } from "./ControlBar";
+import { setCallTitle } from "../Services/title";
 
 // What the other side last told us about their camera, mic and shared screen (has*: there is a device at all)
 const MEDIA_ON = { video: true, audio: true, screen: false, hasCamera: true, hasMic: true };
@@ -158,6 +159,14 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		Object.assign(params.encodings[0], isScreen ? CAMERA_WHILE_SHARING : { maxBitrate: undefined, scaleResolutionDownBy: 1 });
 		camera.setParameters(params).catch(e => console.error("Camera quality could not be changed", e));
 	}, [callStart, isScreen]);
+
+	// The call state in the tab title (the chat puts its unread count in front); the normal title again on leaving
+	useEffect(() => {
+		if (!joined) return;
+		const state = remoteSocketId ? `In call with ${remoteName || "someone"} \u00b7 ShareThings` : `Waiting\u2026 \u00b7 ${roomId}`;
+		setCallTitle(muted ? `\ud83d\udd07 Muted \u00b7 ${state}` : remoteSocketId ? `\u25cf ${state}` : state);
+	}, [joined, remoteSocketId, remoteName, muted, roomId]);
+	useEffect(() => () => setCallTitle(null), []);
 
 	const handleUserJoined = useCallback(({ id, name, seat }) => {
 		remoteSeatRef.current = seat ?? null;
