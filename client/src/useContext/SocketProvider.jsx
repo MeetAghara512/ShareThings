@@ -32,6 +32,7 @@ export const SocketProvider = (props) => {
             const update = () => setStatus(socket.connected ? "connected" : "connecting");
             socket.on("connect", update);
             socket.on("disconnect", update);
+            update(); // it can connect just before this runs (seen in Safari's engine), and "connect" does not fire again
             return () => {
                   socket.off("connect", update);
                   socket.off("disconnect", update);
