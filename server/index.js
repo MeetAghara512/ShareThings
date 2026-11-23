@@ -45,7 +45,7 @@ const SEAT_GRACE = 30000;
 const heldSeats = new Map();
 // Who runs each room: room -> { key, away, removed, denied, waiting }. key: the host's tab, decided here and never by
 // a client. away: timer while that tab may be reloading. removed, denied: tabs kept out until the room is empty.
-// waiting: request id -> { socket, tab, key, resume, ack }, people asking to join. Memory only
+// waiting: request id -> { socket, tab, key, name, resume, ack }, people asking to join. Memory only
 const hosts = new Map();
 const REMOVED = "You were removed from this call.";
 const CANNOT_REMOVE = "You can't remove this person.";
@@ -195,7 +195,7 @@ const hostFor = (room, socket) => {
 function sendRequests(room) {
   const host = hosts.get(room);
   const socket = host && membersOf(room).find(s => tabOf(s) === host.key);
-  socket?.emit("room:requests", { room, requests: [...host.waiting].map(([id, request]) => ({ id, name: request.socket.data.name })) });
+  socket?.emit("room:requests", { room, requests: [...host.waiting].map(([id, request]) => ({ id, name: request.name })) });
 }
 
 // Asked only of someone new: not the first person, the host coming back, or a tab returning to its own seat
@@ -206,7 +206,7 @@ const mustAsk = (room, socket, tab) => {
 
 // Waits outside the Socket.IO room, so no signaling can reach them, and gets no TURN login. The join answer (ack) is
 // held until the host decides. One request per connection, limits per address and per room; the refusal says nothing about the room
-function askHost(room, socket, tab, resume, ack) {
+function askHost(room, socket, tab, name, resume, ack) {
   const host = hosts.get(room);
   const mine = socket.data.request;
   if (mine && mine.room !== room) return ack({ full: true });
@@ -224,7 +224,7 @@ function askHost(room, socket, tab, resume, ack) {
     return ack({ full: true, error: TOO_MANY_WAITING });
   }
   const id = randomBytes(8).toString("hex");
-  host.waiting.set(id, { socket, tab, key, resume, ack });
+  host.waiting.set(id, { socket, tab, key, name, resume, ack });
   socket.data.request = { room, id };
   socket.emit("room:waiting", { room });
   sendRequests(room);
@@ -237,7 +237,8 @@ function dropRequest(socket) {
   if (hosts.get(room)?.waiting.delete(id)) sendRequests(room);
 }
 
-async function enterRoom(room, socket, tab, resume, ack) {
+async function enterRoom(room, socket, tab, name, resume, ack) {
+  socket.data.name = name; // only now: a refused join must not change the name of a request already shown to a host
   const resumed = takeSeat(room, socket, tab, resume);
   socket.join(room);
   noteHost(room, socket);
@@ -279,12 +280,12 @@ io.on("connection", socket => {
     if (hosts.get(room)?.removed.has(key)) return ack({ full: true, removed: true, error: REMOVED });
     if (hosts.get(room)?.denied.has(key)) return ack({ full: true, denied: true, error: DENIED });
     // Display name shown to the other member: plain text, at most 40 characters
-    socket.data.name = (typeof name === "string" && name.trim().slice(0, 40).trim()) || "Guest";
+    const shownName = (typeof name === "string" && name.trim().slice(0, 40).trim()) || "Guest";
     const tab = validClientId(clientId);
     if (othersInRoom(room, socket, tab).length >= MAX_ROOM_SIZE) return ack({ full: true });
-    if (mustAsk(room, socket, tab)) return askHost(room, socket, tab, resume === true, ack);
+    if (mustAsk(room, socket, tab)) return askHost(room, socket, tab, shownName, resume === true, ack);
     dropRequest(socket);
-    await enterRoom(room, socket, tab, resume === true, ack);
+    await enterRoom(room, socket, tab, shownName, resume === true, ack);
   });
 
   // Call signaling only ever goes to the other person in the same room: never to a room name, never to a stranger.
@@ -381,7 +382,7 @@ io.on("connection", socket => {
     request.socket.data.request = null;
     sendRequests(room);
     ack({ ok: true });
-    enterRoom(room, request.socket, request.tab, request.resume, request.ack);
+    enterRoom(room, request.socket, request.tab, request.name, request.resume, request.ack);
   });
 
   socket.on("room:deny", ({ room, id }, ack) => {
