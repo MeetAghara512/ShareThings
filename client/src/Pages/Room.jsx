@@ -593,8 +593,9 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		if (!joined) return;
 		const stops = ["audio", "video"].map(kind => onGranted(kind, () => {
 			if (!troubleRef.current[kind]) return;
-			if (offRef.current[kind]) setTrouble(t => ({ ...t, [kind]: "off" }));
-			else fixDevice(kind);
+			if (!offRef.current[kind]) return fixDevice(kind);
+			setTrouble(t => ({ ...t, [kind]: "off" }));
+			setHelp(h => (h === kind ? null : h));
 		}));
 		return () => stops.forEach(stop => stop());
 	}, [joined, fixDevice]);

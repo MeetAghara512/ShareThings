@@ -131,8 +131,9 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 	useEffect(() => {
 		const stops = ["audio", "video"].map(kind => onGranted(kind, () => {
 			if (!troubleRef.current[kind]) return;
-			if (offRef.current[kind]) setTrouble(t => ({ ...t, [kind]: "off" }));
-			else fixDevice(kind);
+			if (!offRef.current[kind]) return fixDevice(kind);
+			setTrouble(t => ({ ...t, [kind]: "off" }));
+			setHelp(h => (h === kind ? null : h));
 		}));
 		return () => stops.forEach(stop => stop());
 	}, [fixDevice]);
@@ -306,7 +307,7 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 						{troubled("video") && <TroubleMark />}
 					</button>
 				</div>
-				{help && trouble[help] && (
+				{help && troubled(help) && (
 					<DeviceHelp kind={help} trouble={trouble[help]} darkMode={darkMode} onClose={() => setHelp(null)} className="absolute top-3 inset-x-3" />
 				)}
 			</div>
