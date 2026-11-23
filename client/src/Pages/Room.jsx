@@ -203,10 +203,11 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 
 	const handleUserJoined = useCallback(({ id, name, seat }) => {
 		const wasAlone = aloneRef.current;
+		const sameTabBack = !!seat && seat === remoteSeatRef.current; // back from a reload: they never really left
 		remoteSeatRef.current = seat ?? null;
 		setRemoteSocketId(id);
 		setRemoteName(name);
-		if (wasAlone) noticeJoin(name); // only while this tab is in the background and notifications are allowed
+		if (wasAlone && !sameTabBack) noticeJoin(name); // only while this tab is in the background and notifications are allowed
 	}, []);
 
 	// Call is over or never started: fresh connection. Like Google Meet, your camera, mic and
@@ -225,10 +226,11 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	}, [setCallState]);
 
 	// Other user left or our signaling dropped: back to a clean waiting state
-	const handleUserLeft = useCallback(() => {
+	const handleUserLeft = useCallback(({ back } = {}) => {
 		recovery.stop();
 		resetCall();
 		autoCalledRef.current = null; // the same person may come back with the same socket id (in-app Back, then join again)
+		if (!back) remoteSeatRef.current = null; // really gone: coming back later is a new arrival
 		setRemoteSocketId(null);
 		setRemoteName(null);
 		joinRoom();
