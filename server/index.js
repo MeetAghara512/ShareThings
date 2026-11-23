@@ -7,7 +7,7 @@ const { Server } = require("socket.io");
 const { OAuth2Client } = require("google-auth-library");
 const { sendInvite } = require("./invite");
 const { getIceServers } = require("./turn");
-const { limitConnections, joinLimited, peekLimited } = require("./limits");
+const { limitConnections, joinLimited, peekLimited, waitingLimited } = require("./limits");
 const liveStats = require("./stats");
 
 const app = express();
@@ -53,6 +53,8 @@ const DENIED = "You were not let in.";
 const CANNOT_ANSWER = "That request is no longer open.";
 const NO_SEAT = "The call is full.";
 const MAX_WAITING = 5; // people asking to join one room at the same time
+const MAX_WAITING_PER_ADDRESS = 2; // of those, from one internet address
+const TOO_MANY_WAITING = "Too many people are waiting, try again soon";
 // New on every start, so a client can tell "the server restarted and forgot all seats" from "my seat was given up"
 const SERVER_ID = randomBytes(8).toString("hex");
 
@@ -203,7 +205,7 @@ const mustAsk = (room, socket, tab) => {
 };
 
 // Waits outside the Socket.IO room, so no signaling can reach them, and gets no TURN login. The join answer (ack) is
-// held until the host decides. One request per connection, MAX_WAITING per room; the refusal says nothing about the room
+// held until the host decides. One request per connection, limits per address and per room; the refusal says nothing about the room
 function askHost(room, socket, tab, resume, ack) {
   const host = hosts.get(room);
   const mine = socket.data.request;
@@ -216,10 +218,10 @@ function askHost(room, socket, tab, resume, ack) {
     request.socket.data.request = null;
     request.ack({ full: true });
   }
-  if (host.waiting.size >= MAX_WAITING) {
+  if (host.waiting.size >= MAX_WAITING || waitingLimited(socket, [...host.waiting.values()].map(r => r.socket), MAX_WAITING_PER_ADDRESS)) {
     socket.data.request = null;
     sendRequests(room);
-    return ack({ full: true });
+    return ack({ full: true, error: TOO_MANY_WAITING });
   }
   const id = randomBytes(8).toString("hex");
   host.waiting.set(id, { socket, tab, key, resume, ack });

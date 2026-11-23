@@ -76,4 +76,7 @@ function peekLimited(socket, ack) {
   return true;
 }
 
-module.exports = { clientAddress, limitConnections, joinLimited, peekLimited };
+// True when this address already has max of the sockets waiting to be let in to one room
+const waitingLimited = (socket, waiting, max) => !isLocal(socket) && waiting.filter(s => clientAddress(s) === clientAddress(socket)).length >= max;
+
+module.exports = { clientAddress, limitConnections, joinLimited, peekLimited, waitingLimited };
