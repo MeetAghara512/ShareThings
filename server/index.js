@@ -247,6 +247,13 @@ function dropRequest(socket) {
 }
 
 async function enterRoom(room, socket, tab, name, resume, ack) {
+  // One room per connection: an accepted join leaves the previous one
+  for (const other of [...socket.rooms]) {
+    if (other === socket.id || other === room) continue;
+    socket.to(other).emit("user:left", { id: socket.id });
+    socket.leave(other);
+    settleHost(other);
+  }
   socket.data.name = name; // only now: a refused join must not change the name of a request already shown to a host
   const resumed = takeSeat(room, socket, tab, resume);
   socket.join(room);
