@@ -10,6 +10,9 @@ import CallStatus from "./CallStatus";
 import Preview from "./Preview";
 import ChatPanel, { useChatOpen } from "./ChatPanel";
 import ControlBar, { DeviceHelp, MeetingCard } from "./ControlBar";
+import { setCallTitle } from "../Services/title";
+import { noticeJoin } from "../Services/notify";
+import JoinNotice from "./JoinNotice";
 
 // What the other side last told us about their camera, mic and shared screen (has*: there is a device at all)
 const MEDIA_ON = { video: true, audio: true, screen: false, hasCamera: true, hasMic: true };
@@ -63,6 +66,8 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	const serverRef = useRef(null); // which run of the server we joined, to notice a restart
 	const troubleRef = useRef(trouble);
 	troubleRef.current = trouble;
+	const aloneRef = useRef(true); // for the join notification: only when someone arrives while we wait alone
+	aloneRef.current = !remoteSocketId;
 
 	const setCallState = useCallback(state => {
 		callStateRef.current = state;
@@ -72,7 +77,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	const handleCutCall = () => {
 		if (myStreamRef.current) myStreamRef.current.getTracks().forEach(t => t.stop());
 		socket.disconnect();
-		window.location.href = "/";
+		window.location.href = `/left/${encodeURIComponent(roomId)}`; // "You left the call", with Rejoin
 	};
 
 	const handleCopyLink = async () => {
@@ -159,10 +164,20 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		camera.setParameters(params).catch(e => console.error("Camera quality could not be changed", e));
 	}, [callStart, isScreen]);
 
+	// The call state in the tab title (the chat puts its unread count in front); the normal title again on leaving
+	useEffect(() => {
+		if (!joined) return;
+		const state = remoteSocketId ? `In call with ${remoteName || "someone"} \u00b7 ShareThings` : `Waiting\u2026 \u00b7 ${roomId}`;
+		setCallTitle(muted ? `\ud83d\udd07 Muted \u00b7 ${state}` : remoteSocketId ? `\u25cf ${state}` : state);
+	}, [joined, remoteSocketId, remoteName, muted, roomId]);
+	useEffect(() => () => setCallTitle(null), []);
+
 	const handleUserJoined = useCallback(({ id, name, seat }) => {
+		const wasAlone = aloneRef.current;
 		remoteSeatRef.current = seat ?? null;
 		setRemoteSocketId(id);
 		setRemoteName(name);
+		if (wasAlone) noticeJoin(name); // only while this tab is in the background and notifications are allowed
 	}, []);
 
 	// Call is over or never started: fresh connection. Like Google Meet, your camera, mic and
@@ -386,13 +401,12 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		const handleReplaced = reason => {
 			if (reason !== "io server disconnect") return;
 			renewClientId();
-			alert("This call was opened in another tab, so it ended here.");
-			navigate("/");
+			navigate(`/left/${encodeURIComponent(roomId)}`, { state: { reason: "other-tab" } });
 			socket.connect();
 		};
 		socket.on("disconnect", handleReplaced);
 		return () => socket.off("disconnect", handleReplaced);
-	}, [joined, socket, navigate]);
+	}, [joined, socket, navigate, roomId]);
 
 	// Closing or reloading the tab is leaving on purpose: free our seat now, not after the grace period (best effort)
 	useEffect(() => {
@@ -667,6 +681,7 @@ return (
 						{help && deviceTrouble[help] && (
 							<DeviceHelp kind={help} trouble={deviceTrouble[help]} darkMode={darkMode} onClose={() => setHelp(null)} className="absolute z-30 bottom-3 left-1/2 -translate-x-1/2 w-[min(24rem,calc(100%-1.5rem))]" />
 						)}
+						{alone && <JoinNotice className={`absolute ${isScreen ? "top-16" : "top-4"} left-1/2 -translate-x-1/2 z-10`} />}
 						{infoOpen && (
 							<MeetingCard darkMode={darkMode} roomId={roomId} alone={alone} copied={copied} onCopy={handleCopyLink} onClose={() => setInfoOpen(false)} />
 						)}
