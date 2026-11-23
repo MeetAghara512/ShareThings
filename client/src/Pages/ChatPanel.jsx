@@ -58,7 +58,7 @@ const FileItem = ({ item, remoteName, ready }) => {
 	const left = item.speed > 0 && (item.size - item.done) / item.speed;
 	const label = moving
 		? [`${percent}%`, left !== false && `${formatSize(item.speed)}/s`, left !== false && `${formatDuration(left)} left`].filter(Boolean).join(" \u00b7 ")
-		: item.status === "paused" ? `Paused at ${percent}%`
+		: item.status === "paused" ? (item.pausedByThem ? `Paused by ${remoteName || "the other person"} at ${percent}%` : `Paused at ${percent}%`)
 		: item.status === "offered" ? (item.mine ? `Waiting for ${remoteName || "the other person"} to accept` : item.eta ? `${item.rough ? "Up to" : "About"} ${formatDuration(item.eta)} to receive` : "Wants to send you this file")
 		// The other person left or is reloading; it continues by itself when both are in the call
 		: item.status === "waiting" ? (item.mine ? `Paused \u2014 waiting for ${item.to || "the other person"}` : `Paused at ${percent}% \u00b7 ${ready ? "continuing\u2026" : `waiting for ${item.name || "the other person"}`}`)
@@ -68,7 +68,7 @@ const FileItem = ({ item, remoteName, ready }) => {
 	const actions = item.status === "offered" && !item.mine ? [["Accept", files.accept, true], ["Decline", files.decline]]
 		: item.status === "relay" ? [["Send anyway", files.sendAnyway, true], ["Cancel", files.cancel]]
 		: moving ? [["Pause", files.pause], ["Cancel", files.cancel]]
-		: item.status === "paused" ? [["Resume", files.resume, true], ["Cancel", files.cancel]]
+		: item.status === "paused" ? (item.pausedByThem ? [["Cancel", files.cancel]] : [["Resume", files.resume, true], ["Cancel", files.cancel]])
 		: item.status === "unsaved" ? [["Save", files.saveFile, true]]
 		: ["queued", "preparing", "offered", "waiting"].includes(item.status) ? [["Cancel", files.cancel]]
 		: [];

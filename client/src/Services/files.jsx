@@ -11,6 +11,7 @@ import { add, update, bump, parse, getPeerName, registerFiles } from "./chat";
 //   block {id, index, hash} after each 8 MB ->    SHA-256 checked, written, then
 //                                           <-    ack {id, have}: blocks safely stored
 //   pause / resume / cancel {id, reason} go either way; decline {id, reason} comes from the receiver.
+//   A pause belongs to the side that made it: only that side can resume it.
 //
 // The receiver always says where to continue, so a pause, a damaged block, a new connection and a
 // reload all resume the same way. A transfer only continues with the same person (hello's "me").
@@ -58,7 +59,7 @@ const setStatus = (t, status, extra) => {
 	t.status = status;
 	if (moving(t)) ticker ??= setInterval(tick, 500);
 	else t.mark = t.speed = t.ticks = undefined;
-	update(t.item, { status, note: undefined, ...extra });
+	update(t.item, { status, note: undefined, pausedByThem: !!t.pausedByThem, ...extra });
 };
 
 // Progress, speed and time left on screen, twice a second
@@ -234,7 +235,7 @@ const offer = t => {
 	// For the receiver's time estimate: the speed of an earlier file in this call, else the call's own
 	// bandwidth estimate, which is usually lower than what files get, so the time is an upper bound
 	const rate = Math.round(lastSpeed || (callStats.bitrate || 0) / 8) || undefined;
-	send({ type: "offer", id: t.id, key: t.key, name: t.name, size: t.size, modified: t.file.lastModified, rate, measured: lastSpeed > 0 || undefined, paused: t.paused || undefined });
+	send({ type: "offer", id: t.id, key: t.key, name: t.name, size: t.size, modified: t.file.lastModified, rate, measured: lastSpeed > 0 || undefined, paused: t.paused || undefined, byReceiver: t.pausedByThem || undefined });
 };
 
 export const sendAnyway = item => {
@@ -259,8 +260,9 @@ const halt = t => {
 const onPull = msg => {
 	const t = outgoing.find(x => x.id === msg.id);
 	if (!t || t.peer !== link.peer || !Number.isSafeInteger(msg.from) || msg.from < 0 || msg.from > t.blocks || !Number.isSafeInteger(msg.seq)) return;
+	if (t.paused && !t.pausedByThem) return send({ type: "pause", id: t.id }); // paused here: it stays until this side resumes
 	t.accepted = true;
-	t.paused = false;
+	t.paused = t.pausedByThem = false;
 	t.acked = msg.from;
 	setStatus(t, "sending");
 	run(t, msg.from, msg.seq);
@@ -347,14 +349,18 @@ const onOffer = async msg => {
 		incoming.delete(t.id);
 		incoming.set((t.id = id), t);
 		t.peer = link?.peer;
-		t.paused ||= msg.paused === true;
+		// The sender's offer says whether it is still paused, and by whom
+		if (msg.paused === true) {
+			if (!t.paused) t.pausedByThem = msg.byReceiver !== true;
+			t.paused = true;
+		} else if (t.pausedByThem) t.paused = t.pausedByThem = false;
 		if (t.sink) return t.paused ? setStatus(t, "paused") : pull(t);
 		// Listed again after a reload (restore): open its file and continue where it stopped
 		if (t.accepted && t.status === "waiting") take(t, () => diskSink(t));
 		return;
 	}
 	const rate = Number.isFinite(msg.rate) && msg.rate > 0 ? msg.rate : 0;
-	t = Object.assign(receiver(msg), { status: "offered", from: getPeerName(), peer: link?.peer, room: location.pathname });
+	t = Object.assign(receiver(msg), { status: "offered", from: getPeerName(), peer: link?.peer, room: location.pathname, paused: msg.paused === true, pausedByThem: msg.paused === true && msg.byReceiver !== true });
 	incoming.set(id, t);
 	t.item = add({ kind: "file", mine: false, name: t.from, fileName: t.name, size, done: 0, status: "offered", eta: rate && size / rate, rough: msg.measured !== true });
 	bump();
@@ -604,6 +610,7 @@ export const pause = item => {
 	const t = byItem(item);
 	if (!t || !moving(t)) return;
 	t.paused = true;
+	t.pausedByThem = false;
 	halt(t);
 	setStatus(t, "paused");
 	send({ type: "pause", id: t.id });
@@ -611,7 +618,7 @@ export const pause = item => {
 
 export const resume = item => {
 	const t = byItem(item);
-	if (t?.status !== "paused" || !link) return;
+	if (t?.status !== "paused" || t.pausedByThem || !link) return;
 	t.paused = false;
 	if (!t.mine) return pull(t);
 	setStatus(t, "sending");
@@ -629,7 +636,7 @@ export const cancel = item => {
 const onPause = msg => {
 	const t = outgoing.find(x => x.id === msg.id) || incoming.get(msg.id);
 	if (!t || !moving(t)) return;
-	t.paused = true;
+	t.paused = t.pausedByThem = true;
 	halt(t);
 	setStatus(t, "paused");
 };
@@ -637,7 +644,8 @@ const onPause = msg => {
 const onResume = msg => {
 	const t = incoming.get(msg.id);
 	if (t?.status !== "paused") return;
-	t.paused = false;
+	if (!t.pausedByThem) return send({ type: "pause", id: t.id }); // paused here too: it stays until this side resumes
+	t.paused = t.pausedByThem = false;
 	pull(t);
 };
 
