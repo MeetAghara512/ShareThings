@@ -690,7 +690,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	}, []);
 	// Below the small swap tile (top right) where the stage is too narrow for both side by side
 	const belowTile = !wide && remoteSharing ? 8 : 0;
-	const joinRequests = isHost && <JoinRequests requests={requests} darkMode={darkMode} inline={!wide} onAdmit={id => answerRequest("room:admit", id)} onDeny={id => answerRequest("room:deny", id)} />;
+	const joinRequests = isHost && <JoinRequests requests={requests} darkMode={darkMode} inline={!wide} tile={!!remoteSharing} onAdmit={id => answerRequest("room:admit", id)} onDeny={id => answerRequest("room:deny", id)} />;
 	const status = callStart && (
 		<div className="flex items-center gap-3 min-w-0">
 			<PrivacyShield remoteName={remoteName} darkMode={darkMode} />
