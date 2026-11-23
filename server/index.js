@@ -8,6 +8,7 @@ const { OAuth2Client } = require("google-auth-library");
 const { sendInvite } = require("./invite");
 const { getIceServers } = require("./turn");
 const { limitConnections, joinLimited, peekLimited } = require("./limits");
+const liveStats = require("./stats");
 
 const app = express();
 const server = http.createServer(app);
@@ -33,6 +34,9 @@ const io = new Server(server, {
 
 // Too many new connections from one internet address are refused (see limits.js)
 io.use(limitConnections);
+
+// People online and calls in progress, for the first page (see stats.js)
+const stats = liveStats(io);
 
 const MAX_ROOM_SIZE = 2;
 // A dropped connection keeps its seat this long, so the same browser tab can come back to its call
@@ -124,6 +128,7 @@ function releaseSeat(room, clientId) {
 
 io.on("connection", socket => {
   socket.emit("app:version", { version: PROTOCOL_VERSION });
+  socket.emit("stats:update", stats.current());
 
   // Every event carries an object payload; drop anything else before a handler can throw on it
   socket.use(([, data], next) => {
@@ -208,6 +213,9 @@ io.on("connection", socket => {
     const count = othersInRoom(room, socket, validClientId(clientId)).length;
     ack({ count, full: count >= MAX_ROOM_SIZE });
   });
+
+  // The first page asks when it opens, since it may open after the numbers were sent
+  socket.on("stats:get", (data, ack) => typeof ack === "function" && ack(stats.current()));
 
   socket.on("room:leave", ({ room }) => {
     if (room === socket.id || !socket.rooms.has(room)) return;
