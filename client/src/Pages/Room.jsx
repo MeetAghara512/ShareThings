@@ -77,7 +77,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	const handleCutCall = () => {
 		if (myStreamRef.current) myStreamRef.current.getTracks().forEach(t => t.stop());
 		socket.disconnect();
-		window.location.href = "/";
+		window.location.href = `/left/${encodeURIComponent(roomId)}`; // "You left the call", with Rejoin
 	};
 
 	const handleCopyLink = async () => {
@@ -401,13 +401,12 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		const handleReplaced = reason => {
 			if (reason !== "io server disconnect") return;
 			renewClientId();
-			alert("This call was opened in another tab, so it ended here.");
-			navigate("/");
+			navigate(`/left/${encodeURIComponent(roomId)}`, { state: { reason: "other-tab" } });
 			socket.connect();
 		};
 		socket.on("disconnect", handleReplaced);
 		return () => socket.off("disconnect", handleReplaced);
-	}, [joined, socket, navigate]);
+	}, [joined, socket, navigate, roomId]);
 
 	// Closing or reloading the tab is leaving on purpose: free our seat now, not after the grace period (best effort)
 	useEffect(() => {
