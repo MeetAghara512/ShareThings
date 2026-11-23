@@ -864,7 +864,7 @@ return (
 							{offline && (
 								<div role="alert" className="max-w-full px-4 py-2 rounded-2xl bg-amber-500 text-black text-sm font-semibold shadow flex flex-wrap items-center justify-center gap-x-3 gap-y-1 pointer-events-auto">
 									You're offline
-									{(hasCamera || hasMic) && <button type="button" onClick={turnOffDevices} className="underline">Turn off camera and mic</button>}
+									{myStream?.getTracks().some(t => t.readyState === "live") && <button type="button" onClick={turnOffDevices} className="underline">Turn off camera and mic</button>}
 								</div>
 							)}
 							<MutedWarning stream={myStream} muted={muted} hint={`press ${keyText("mic")} or the mic button to unmute`} />
