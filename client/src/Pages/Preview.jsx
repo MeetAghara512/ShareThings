@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { FaVideo, FaVideoSlash, FaMicrophone, FaMicrophoneSlash, FaRedo } from "react-icons/fa";
-import { MdExpandMore, MdSettings } from "react-icons/md";
+import { MdExpandMore, MdVolumeUp } from "react-icons/md";
 import { openDevice, openEach, onGranted, permission, troubleOf, troubleText } from "../Services/devices";
 import clientId from "../Services/clientId";
 import { DeviceHelp, TroubleMark } from "./ControlBar";
@@ -24,7 +24,18 @@ const whoIsHere = count =>
 	`${count} people are in this call`;
 
 // Check camera and mic before joining. Nothing is sent to the room until Join.
-const Preview = ({ darkMode, roomId, onJoin }) => {
+// A compact device button: the browser's own list opens on it, and closes once something is picked
+const DevicePick = ({ Icon, label, value, options, onChange }) => (
+	<label title={options.find(o => o.id === value)?.text || label} className="relative h-12 rounded-xl border border-line bg-surface flex items-center justify-center gap-1.5 transition-colors hover:bg-raised focus-within:ring-2 focus-within:ring-accent">
+		<Icon aria-hidden="true" className="text-lg" />
+		<MdExpandMore aria-hidden="true" className="text-muted" />
+		<select aria-label={label} value={value} onChange={e => onChange(e.target.value)} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
+			{options.map(o => <option key={o.id} value={o.id}>{o.text}</option>)}
+		</select>
+	</label>
+);
+
+const Preview = ({ roomId, onJoin }) => {
 	const socket = useSocket();
 	const { status } = useSocketStatus();
 	const [joining, setJoining] = useState(false); // Join now pressed while the server is still waking up
@@ -243,17 +254,15 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 	}, [joining, status, opening]);
 
 	// Round on/off buttons on the preview, red when off (like Google Meet)
-	const toggleClass = off => `w-12 h-12 rounded-full flex items-center justify-center text-white shadow-md transition-colors ` +
-		(off ? "bg-red-600 hover:bg-red-700" : "bg-gray-800/70 hover:bg-gray-700/80 border border-white/40");
+	const toggleClass = off => `w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center text-white shadow-md transition-colors ` +
+		(off ? "bg-danger hover:bg-danger-hover" : "bg-black/75 hover:bg-black/90");
 
-	const selectClass = `w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 ` +
-		(darkMode ? "bg-gray-700 border-gray-600" : "bg-white border-gray-300");
 
 	// Browsers may hold audio until the first click; any click on the preview wakes the meter up.
 	// Clicking Join closes the meter straight away, and Firefox then rejects the wake-up: nothing to do
 	return (
-		<div className="w-full max-w-4xl flex flex-col md:flex-row gap-6 items-center" onPointerDown={() => audioCtxRef.current?.resume().catch(() => {})}>
-			<div className="relative w-full md:w-3/5 aspect-video bg-black rounded-2xl overflow-hidden shadow-lg border-4 border-gray-700">
+		<div className="w-full max-w-6xl flex flex-col md:flex-row gap-6 lg:gap-10 items-center" onPointerDown={() => audioCtxRef.current?.resume().catch(() => {})}>
+			<div className="relative w-full md:flex-1 md:min-w-0 aspect-video bg-black rounded-3xl overflow-hidden shadow-lg">
 				{/* Shown like a mirror; the other person gets the true picture */}
 				{stream?.getVideoTracks().length > 0 && (
 					<video
@@ -276,13 +285,19 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 						{slow && (
 							<button
 								onClick={() => start(videoId, audioId)}
-								className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-full flex items-center gap-2 shadow-sm transition-colors"
+								className="bg-accent hover:bg-accent-hover text-on-accent px-5 py-2 rounded-full flex items-center gap-2 shadow-sm transition-colors"
 							>
 								<FaRedo /> Retry
 							</button>
 						)}
 					</div>
 				)}
+				<div aria-label="Microphone level" className="absolute left-3 top-3 sm:left-4 sm:top-4 flex items-center gap-2 h-9 px-3 rounded-xl bg-black/75 text-white text-xs">
+					<FaMicrophone aria-hidden="true" />
+					<div className="w-14 sm:w-20 h-1.5 rounded-full bg-white/25 overflow-hidden">
+						<div ref={meterRef} className="h-full bg-accent" style={{ width: "0%" }} />
+					</div>
+				</div>
 				{/* Always there, like Google Meet: red with a "!" when the device is blocked or missing */}
 				<div className="absolute bottom-4 inset-x-0 flex justify-center gap-4">
 					<button
@@ -309,23 +324,23 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 					</button>
 				</div>
 				{help && troubled(help) && (
-					<DeviceHelp kind={help} trouble={trouble[help]} darkMode={darkMode} onClose={() => setHelp(null)} className="absolute top-3 inset-x-3" />
+					<DeviceHelp kind={help} trouble={trouble[help]} onClose={() => setHelp(null)} className="absolute top-3 inset-x-3" />
 				)}
 			</div>
 
-			<form onSubmit={handleJoin} className={`w-full md:w-2/5 p-6 rounded-2xl shadow-lg space-y-4 ${darkMode ? "bg-gray-800 text-gray-100" : "bg-white text-gray-900"}`}>
-				<div className="space-y-1">
-					<h3 className="text-xl font-semibold">Ready to join?</h3>
+			<form onSubmit={handleJoin} className="w-full md:w-80 lg:w-[22rem] shrink-0 space-y-5">
+				<div className="space-y-2">
+					<h1 className="font-display text-3xl sm:text-4xl font-bold tracking-tight">Ready to join?</h1>
 					<ServerStatus />
 					{peek && (
-						<p className={`text-sm font-medium ${peek.full || peek.invalid ? "text-red-500" : "text-indigo-400"}`}>
+						<p className={`flex items-center gap-2 text-sm ${peek.full || peek.invalid ? "text-red-500" : "text-muted"}`}>
+							{!peek.full && !peek.invalid && <span aria-hidden="true" className="w-2 h-2 shrink-0 rounded-full bg-accent" />}
 							{peek.invalid || (peek.full ? `${here}. This room is full.` : here)}
 						</p>
 					)}
-					<p className="text-sm opacity-60">No one in the room can see or hear you until you join.</p>
 				</div>
 
-				<label className="block space-y-1 text-sm">
+				<label className="block space-y-2 text-sm">
 					<span className="block font-medium">Your name</span>
 					<input
 						type="text"
@@ -335,53 +350,9 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 						required
 						maxLength={40}
 						autoComplete="name"
-						className={`w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 ` +
-							(darkMode ? "bg-gray-700 border-gray-600 placeholder-gray-400" : "bg-white border-gray-300 placeholder-gray-500")}
+						className="w-full h-12 px-4 rounded-xl border border-line bg-surface text-base placeholder-muted focus:outline-none focus:ring-2 focus:ring-accent"
 					/>
 				</label>
-
-				{/* Closed by default, so Join now is on screen without scrolling, also on phones */}
-				<details className="group text-sm">
-					<summary className={`flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer list-none font-medium [&::-webkit-details-marker]:hidden ${darkMode ? "bg-gray-700/60 hover:bg-gray-700" : "bg-gray-100 hover:bg-gray-200"}`}>
-						<MdSettings className="text-lg" /> Camera, mic and network
-						<MdExpandMore className="ml-auto text-xl transition-transform group-open:rotate-180" />
-					</summary>
-					<div className="space-y-4 pt-4">
-				<div className="space-y-1 text-sm">
-					<span className="block font-medium">Microphone level{muted && " (muted)"}</span>
-					<div aria-label="Microphone level" className={`h-2 rounded-full overflow-hidden ${darkMode ? "bg-gray-600" : "bg-gray-200"}`}>
-						<div ref={meterRef} className="h-full bg-green-500" style={{ width: "0%" }} />
-					</div>
-				</div>
-
-				{devices.video.length > 0 && (
-					<label className="block space-y-1 text-sm">
-						<span className="block font-medium">Camera</span>
-						<select value={videoId} onChange={e => pickCamera(e.target.value)} className={selectClass}>
-							{devices.video.map((d, i) => <option key={d.deviceId} value={d.deviceId}>{d.label || `Camera ${i + 1}`}</option>)}
-						</select>
-					</label>
-				)}
-				{devices.audio.length > 0 && (
-					<label className="block space-y-1 text-sm">
-						<span className="block font-medium">Microphone</span>
-						<select value={audioId} onChange={e => pickMic(e.target.value)} className={selectClass}>
-							{devices.audio.map((d, i) => <option key={d.deviceId} value={d.deviceId}>{d.label || `Microphone ${i + 1}`}</option>)}
-						</select>
-					</label>
-				)}
-				{speakers.length > 0 && (
-					<label className="block space-y-1 text-sm">
-						<span className="block font-medium">Speaker</span>
-						<select value={speakerId} onChange={e => pickSpeaker(e.target.value)} className={selectClass}>
-							{speakers.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
-						</select>
-					</label>
-				)}
-
-				<NetworkCheck />
-					</div>
-				</details>
 
 				{without.length > 0 && (
 					<p className="text-sm text-amber-500">
@@ -391,10 +362,17 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 				<button
 					type="submit"
 					disabled={!canJoin}
-					className="w-full py-3 rounded-lg bg-indigo-600 text-white font-semibold transition-transform hover:bg-indigo-700 hover:-translate-y-1 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:bg-indigo-600"
+					className="w-full h-14 rounded-2xl bg-accent text-on-accent font-semibold text-lg transition-colors hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-accent"
 				>
 					{joining ? "Joining…" : "Join now"}
 				</button>
+
+				<div className="grid grid-flow-col auto-cols-fr gap-2">
+					{devices.video.length > 0 && <DevicePick Icon={FaVideo} label="Camera" value={videoId} onChange={pickCamera} options={devices.video.map((d, i) => ({ id: d.deviceId, text: d.label || `Camera ${i + 1}` }))} />}
+					{devices.audio.length > 0 && <DevicePick Icon={FaMicrophone} label="Microphone" value={audioId} onChange={pickMic} options={devices.audio.map((d, i) => ({ id: d.deviceId, text: d.label || `Microphone ${i + 1}` }))} />}
+					{speakers.length > 0 && <DevicePick Icon={MdVolumeUp} label="Speaker" value={speakerId} onChange={pickSpeaker} options={speakers.map(s => ({ id: s.id, text: s.label }))} />}
+				</div>
+				<NetworkCheck />
 			</form>
 		</div>
 	);
