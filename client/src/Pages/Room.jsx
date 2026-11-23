@@ -248,6 +248,20 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 			// What is off right now stays closed, and its button opens it
 			const off = { ...offRef.current };
 			stream = off.video && off.audio ? new MediaStream() : await openDevices(videoId, audioId, off);
+			// A button pressed during that wait: close what is now off and open what is now on, so nothing off is ever sent
+			for (let kind; connection === peer.peer && (kind = ["audio", "video"].find(k => off[k] !== offRef.current[k]));) {
+				off[kind] = offRef.current[kind];
+				stream.getTracks().filter(t => t.kind === kind).forEach(t => {
+					t.stop();
+					stream.removeTrack(t);
+				});
+				if (off[kind]) continue;
+				try {
+					stream.addTrack(await openDevice(kind, prefsRef.current[kind === "video" ? "videoId" : "audioId"]));
+				} catch (e) {
+					setTrouble(t => ({ ...t, [kind]: troubleOf(e) }));
+				}
+			}
 			if (connection !== peer.peer) {
 				// The call ended while the camera prompt was open (e.g. browser Back): don't leave the camera on
 				stream.getTracks().forEach(t => t.stop());
@@ -257,7 +271,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 			stream.getAudioTracks().forEach(t => t.enabled = !offRef.current.audio);
 			myStreamRef.current = stream;
 			setMyStream(stream);
-			setTrouble(t => ({ ...t, ...(off.video && { video: "off" }), ...(off.audio && { audio: "off" }) }));
+			setTrouble(t => ({ ...t, video: off.video ? "off" : t.video === "off" ? null : t.video, audio: off.audio ? "off" : t.audio === "off" ? null : t.audio }));
 		}
 		if (tracksAddedRef.current !== connection) {
 			tracksAddedRef.current = connection;
