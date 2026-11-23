@@ -197,7 +197,10 @@ const ChatPanel = ({ darkMode, remoteName }) => {
 		const current = pending;
 		const show = setPendingHere();
 		setPending(null);
-		show(await clipboard.sendPending(current));
+		const result = await clipboard.sendPending(current);
+		// A failure is shown even after the connection changed: it holds nothing that could be sent
+		if (result?.kind === "error") setPending(result);
+		else show(result);
 	};
 
 	const muted = darkMode ? "text-gray-400" : "text-gray-500";

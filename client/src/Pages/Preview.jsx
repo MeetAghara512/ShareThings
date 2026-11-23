@@ -7,6 +7,7 @@ import { useSocket, useSocketStatus } from "../useContext/SocketProvider";
 import { useAuth } from "../useContext/AuthProvider";
 import ServerStatus from "./ServerStatus";
 import NetworkCheck from "./NetworkCheck";
+import { pickSpeaker, refreshSpeakers, useSpeaker } from "./Speaker";
 
 // Devices picked and name used on this browser
 const CAMERA_KEY = "sharethings.camera";
@@ -36,6 +37,7 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 	const [devices, setDevices] = useState({ video: [], audio: [] });
 	const [videoId, setVideoId] = useState(() => localStorage.getItem(CAMERA_KEY) || "");
 	const [audioId, setAudioId] = useState(() => localStorage.getItem(MIC_KEY) || "");
+	const { speakers, id: speakerId } = useSpeaker();
 	const [cameraOff, setCameraOff] = useState(false);
 	const [muted, setMuted] = useState(false);
 	const [name, setName] = useState(() => localStorage.getItem(NAME_KEY) || user?.name || "");
@@ -44,6 +46,8 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 	const streamRef = useRef(null);
 	const troubleRef = useRef(trouble);
 	troubleRef.current = trouble;
+	const offRef = useRef({}); // what the person turned off
+	offRef.current = { audio: muted, video: cameraOff };
 	const requestRef = useRef(0); // only the latest camera request counts
 	const handedOverRef = useRef(false);
 	const meterRef = useRef(null);
@@ -56,6 +60,7 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 			video: list.filter(d => d.kind === "videoinput" && d.deviceId),
 			audio: list.filter(d => d.kind === "audioinput" && d.deviceId),
 		});
+		refreshSpeakers();
 	}, []);
 
 	const start = useCallback(async (video, audio) => {
@@ -71,9 +76,16 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 		const { stream: s, trouble } = navigator.mediaDevices ? await openEach(video, audio) : { stream: new MediaStream(), trouble: { audio: "blocked", video: "blocked" } };
 		// Switched device, retried or left the page meanwhile: drop this one
 		if (request !== requestRef.current) return s.getTracks().forEach(t => t.stop());
+		// Turned off while the prompt was open: not kept open, so its light goes out. Its button opens it
+		const closed = {};
+		s.getTracks().filter(t => offRef.current[t.kind]).forEach(t => {
+			t.stop();
+			s.removeTrack(t);
+			closed[t.kind] = "off";
+		});
 		streamRef.current = s;
 		setStream(s);
-		setTrouble(trouble);
+		setTrouble({ ...trouble, ...closed });
 		// Show the devices actually in use (a saved one that is gone falls back to the default)
 		const [camera] = s.getVideoTracks(), [mic] = s.getAudioTracks();
 		if (camera) setVideoId(camera.getSettings().deviceId || "");
@@ -93,7 +105,10 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 	// A red button: ask again where the browser still can (the click allows the prompt), else show the fix
 	const fixDevice = useCallback(async kind => {
 		const request = requestRef.current;
-		if (troubleRef.current[kind] === "system" || await permission(kind) === "denied") return setHelp(kind);
+		if (troubleRef.current[kind] === "system" || await permission(kind) === "denied") {
+			setTrouble(t => (t[kind] === "off" ? { ...t, [kind]: "blocked" } : t));
+			return setHelp(kind);
+		}
 		try {
 			const track = await openDevice(kind, kind === "video" ? videoId : audioId);
 			if (request !== requestRef.current) return track.stop();
@@ -101,6 +116,8 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 			streamRef.current = s;
 			setStream(s);
 			setTrouble(t => ({ ...t, [kind]: null }));
+			if (kind === "video") setCameraOff(false);
+			else setMuted(false);
 			setHelp(null);
 			refreshDevices();
 		} catch (e) {
@@ -110,9 +127,14 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 		}
 	}, [videoId, audioId, refreshDevices]);
 
-	// Allowed in the address bar meanwhile: the device starts by itself
+	// Allowed in the address bar meanwhile: the device starts by itself, unless it was turned off on purpose
 	useEffect(() => {
-		const stops = ["audio", "video"].map(kind => onGranted(kind, () => troubleRef.current[kind] && fixDevice(kind)));
+		const stops = ["audio", "video"].map(kind => onGranted(kind, () => {
+			if (!troubleRef.current[kind]) return;
+			if (!offRef.current[kind]) return fixDevice(kind);
+			setTrouble(t => ({ ...t, [kind]: "off" }));
+			setHelp(h => (h === kind ? null : h));
+		}));
 		return () => stops.forEach(stop => stop());
 	}, [fixDevice]);
 
@@ -197,7 +219,9 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 	const opening = loading && !slow;
 	// A server from before this change still sends names: then only their number is used
 	const here = peek && whoIsHere(peek.count ?? peek.names?.length ?? 0);
-	const without = ["video", "audio"].filter(kind => trouble[kind]);
+	// Allowed while turned off: closed until its button is pressed, and shown as simply off
+	const troubled = kind => (trouble[kind] === "off" ? null : trouble[kind]);
+	const without = ["video", "audio"].filter(kind => troubled(kind));
 
 	const handleJoin = e => {
 		e?.preventDefault();
@@ -242,7 +266,7 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 				{!loading && (trouble.video || cameraOff) && (
 					<div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-zinc-800 text-gray-300">
 						<FaVideoSlash size={40} />
-						<span>{trouble.video ? troubleText("video", trouble.video) : "Camera is off"}</span>
+						<span>{troubled("video") ? troubleText("video", trouble.video) : "Camera is off"}</span>
 					</div>
 				)}
 				{loading && (
@@ -263,27 +287,27 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 					<button
 						type="button"
 						onClick={() => trouble.audio ? fixDevice("audio") : setMuted(!muted)}
-						aria-pressed={trouble.audio ? undefined : muted}
-						aria-label={trouble.audio ? troubleText("audio", trouble.audio) : muted ? "Turn on microphone" : "Turn off microphone"}
-						title={trouble.audio ? troubleText("audio", trouble.audio) : muted ? "Turn on microphone" : "Turn off microphone"}
+						aria-pressed={troubled("audio") ? undefined : muted}
+						aria-label={troubled("audio") ? troubleText("audio", trouble.audio) : muted ? "Turn on microphone" : "Turn off microphone"}
+						title={troubled("audio") ? troubleText("audio", trouble.audio) : muted ? "Turn on microphone" : "Turn off microphone"}
 						className={`relative ${toggleClass(muted || trouble.audio)}`}
 					>
 						{muted || trouble.audio ? <FaMicrophoneSlash size={18} /> : <FaMicrophone size={18} />}
-						{trouble.audio && <TroubleMark />}
+						{troubled("audio") && <TroubleMark />}
 					</button>
 					<button
 						type="button"
 						onClick={() => trouble.video ? fixDevice("video") : setCameraOff(!cameraOff)}
-						aria-pressed={trouble.video ? undefined : cameraOff}
-						aria-label={trouble.video ? troubleText("video", trouble.video) : cameraOff ? "Turn on camera" : "Turn off camera"}
-						title={trouble.video ? troubleText("video", trouble.video) : cameraOff ? "Turn on camera" : "Turn off camera"}
+						aria-pressed={troubled("video") ? undefined : cameraOff}
+						aria-label={troubled("video") ? troubleText("video", trouble.video) : cameraOff ? "Turn on camera" : "Turn off camera"}
+						title={troubled("video") ? troubleText("video", trouble.video) : cameraOff ? "Turn on camera" : "Turn off camera"}
 						className={`relative ${toggleClass(cameraOff || trouble.video)}`}
 					>
 						{cameraOff || trouble.video ? <FaVideoSlash size={18} /> : <FaVideo size={18} />}
-						{trouble.video && <TroubleMark />}
+						{troubled("video") && <TroubleMark />}
 					</button>
 				</div>
-				{help && trouble[help] && (
+				{help && troubled(help) && (
 					<DeviceHelp kind={help} trouble={trouble[help]} darkMode={darkMode} onClose={() => setHelp(null)} className="absolute top-3 inset-x-3" />
 				)}
 			</div>
@@ -335,6 +359,14 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 						<span className="block font-medium">Microphone</span>
 						<select value={audioId} onChange={e => pickMic(e.target.value)} className={selectClass}>
 							{devices.audio.map((d, i) => <option key={d.deviceId} value={d.deviceId}>{d.label || `Microphone ${i + 1}`}</option>)}
+						</select>
+					</label>
+				)}
+				{speakers.length > 0 && (
+					<label className="block space-y-1 text-sm">
+						<span className="block font-medium">Speaker</span>
+						<select value={speakerId} onChange={e => pickSpeaker(e.target.value)} className={selectClass}>
+							{speakers.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
 						</select>
 					</label>
 				)}

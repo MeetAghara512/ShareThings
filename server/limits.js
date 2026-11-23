@@ -1,6 +1,8 @@
 // Limits per internet address, so one address cannot flood the free server with connections, joins or
 // "who is here" checks. Counts live in memory over a sliding window and reset when the server restarts.
 
+const { isIP } = require("net");
+
 const WINDOW_MS = Number(process.env.LIMIT_WINDOW_MS) || 60 * 1000; // a shorter window can be set for tests
 const MAX_CONNECTIONS = 30; // new socket connections per address
 const MAX_JOINS = 30; // room:join per address
@@ -9,11 +11,14 @@ const MAX_PEEKS_PER_SOCKET = 30; // room:peek per socket: an open join screen as
 const MAX_STATS_PER_SOCKET = 60; // stats:get per socket: the first page asks once, a network check 5 times
 const TOO_MANY = "Too many attempts, wait a minute and try again";
 
-// The client's internet address. cf-connecting-ip is set by the host's edge and cannot be forged through it;
-// x-forwarded-for can be, so it only comes second
+const ipOf = value => (typeof value === "string" && isIP(value.trim()) ? value.trim() : null);
+
+// The client's internet address. On Render (which always sets RENDER) every request passes Cloudflare, which
+// overwrites cf-connecting-ip. Anywhere else a client could send that header itself, so it is ignored there.
+// A client can also write anything at the start of x-forwarded-for: only the last entry, added by our own proxy, counts
 function clientAddress(socket) {
   const { "cf-connecting-ip": edgeIp, "x-forwarded-for": forwardedFor } = socket.handshake.headers;
-  return edgeIp || (typeof forwardedFor === "string" && forwardedFor.split(",")[0].trim()) || socket.handshake.address;
+  return (process.env.RENDER && ipOf(edgeIp)) || (typeof forwardedFor === "string" && ipOf(forwardedFor.split(",").pop())) || socket.handshake.address;
 }
 
 // A direct connection from this machine (local development, the test suites) is never limited. On the host every

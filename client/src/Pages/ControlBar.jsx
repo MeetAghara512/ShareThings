@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from "react";
-import { MdMic, MdMicOff, MdVideocam, MdVideocamOff, MdPresentToAll, MdCallEnd, MdInfoOutline, MdLightMode, MdDarkMode, MdContentCopy, MdCheck, MdClose, MdMailOutline, MdMoreVert, MdPersonRemove } from "react-icons/md";
+import { MdMic, MdMicOff, MdVideocam, MdVideocamOff, MdPresentToAll, MdCallEnd, MdInfoOutline, MdLightMode, MdDarkMode, MdContentCopy, MdCheck, MdClose, MdMailOutline, MdMoreVert, MdPersonRemove, MdPictureInPictureAlt } from "react-icons/md";
 import { ChatButton } from "./ChatPanel";
 import { ReactionButton } from "./Reactions";
 import InviteForm from "./InviteForm";
 import { HELP, troubleText } from "../Services/devices";
 import { CAN_SHARE_SCREEN, SHORTCUTS, keyText, ariaKeys } from "../Services/shortcuts";
 import { MODES } from "../Services/quality";
+import { pickSpeaker, useSpeaker } from "./Speaker";
 
 // Time of day, as in the corner of Google Meet
 const Clock = () => {
@@ -39,10 +40,12 @@ const QUALITY_NOTES = {
 	saver: "For mobile data: at most 360p",
 };
 
-// "More options": the video quality setting, the theme and, for the host, removing the other person
-const MoreMenu = ({ darkMode, quality, onQuality, onToggleDarkMode, removeName, onRemove, className }) => {
+// "More options": the video quality setting, the speaker, popping out the video, the theme and, for the host,
+// removing the other person
+const MoreMenu = ({ darkMode, quality, onQuality, onPopOut, onToggleDarkMode, removeName, onRemove, className }) => {
 	const [open, setOpen] = useState(false);
 	const ref = useRef(null);
+	const { speakers, id: speakerId } = useSpeaker();
 
 	// A click elsewhere or Escape closes it
 	useEffect(() => {
@@ -67,7 +70,7 @@ const MoreMenu = ({ darkMode, quality, onQuality, onToggleDarkMode, removeName, 
 				<MdMoreVert />
 			</button>
 			{open && (
-				<div role="menu" aria-label="More options" className={`absolute z-50 bottom-full right-0 mb-2 w-72 py-2 rounded-xl shadow-2xl text-sm ${darkMode ? "bg-gray-800 text-gray-100" : "bg-white text-gray-900"}`}>
+				<div role="menu" aria-label="More options" className={`absolute z-50 bottom-full right-0 mb-2 w-72 max-h-[calc(100dvh-6rem)] overflow-y-auto py-2 rounded-xl shadow-2xl text-sm ${darkMode ? "bg-gray-800 text-gray-100" : "bg-white text-gray-900"}`}>
 					<p className="px-4 pb-1 text-xs font-semibold uppercase opacity-60">Video quality</p>
 					{Object.entries(MODES).map(([value, label]) => (
 						<button key={value} type="button" role="menuitemradio" aria-checked={quality === value} onClick={choose(() => onQuality(value))} className={item}>
@@ -78,7 +81,24 @@ const MoreMenu = ({ darkMode, quality, onQuality, onToggleDarkMode, removeName, 
 							</span>
 						</button>
 					))}
+					{speakers.length > 0 && (
+						<>
+							<div className={`my-2 border-t ${darkMode ? "border-gray-700" : "border-gray-200"}`} />
+							<p className="px-4 pb-1 text-xs font-semibold uppercase opacity-60">Speaker</p>
+							{speakers.map(s => (
+								<button key={s.id} type="button" role="menuitemradio" aria-checked={speakerId === s.id} onClick={choose(() => pickSpeaker(s.id))} className={`${item} items-center`}>
+									<span className={`w-3 h-3 shrink-0 rounded-full border-2 ${speakerId === s.id ? "bg-indigo-500 border-indigo-500" : "border-gray-400"}`} />
+									<span className="truncate">{s.label}</span>
+								</button>
+							))}
+						</>
+					)}
 					<div className={`my-2 border-t ${darkMode ? "border-gray-700" : "border-gray-200"}`} />
+					{onPopOut && (
+						<button type="button" role="menuitem" onClick={choose(onPopOut)} className={`${item} items-center`}>
+							<MdPictureInPictureAlt className="text-lg" /> Pop out video
+						</button>
+					)}
 					<button type="button" role="menuitem" onClick={choose(onToggleDarkMode)} className={`${item} items-center`}>
 						{darkMode ? <MdLightMode className="text-lg" /> : <MdDarkMode className="text-lg" />}
 						{darkMode ? "Switch to light mode" : "Switch to dark mode"}
@@ -98,7 +118,7 @@ const MoreMenu = ({ darkMode, quality, onQuality, onToggleDarkMode, removeName, 
 // The call's one row of controls, like Google Meet: time, room and call status on the left, round
 // icon buttons in the middle, meeting details and more options (video quality, theme) on the right.
 // trouble: a mic or camera that is blocked or missing; its button is red with a "!" and its click tries to fix it
-const ControlBar = ({ darkMode, roomId, status, muted, cameraOff, trouble = {}, isScreen, infoOpen, quality, onQuality, onToggleMic, onToggleCamera, onToggleShare, onToggleInfo, onToggleDarkMode, removeName, onRemove, onLeave, showInfo = true }) => {
+const ControlBar = ({ darkMode, roomId, status, muted, cameraOff, trouble = {}, isScreen, infoOpen, quality, onQuality, onPopOut, onToggleMic, onToggleCamera, onToggleShare, onToggleInfo, onToggleDarkMode, removeName, onRemove, onLeave, showInfo = true }) => {
 	const round = "w-10 h-10 sm:w-12 sm:h-12 shrink-0 rounded-full flex items-center justify-center text-xl transition-colors";
 	const idle = darkMode ? "bg-gray-700 hover:bg-gray-600 text-white" : "bg-gray-200 hover:bg-gray-300 text-gray-800";
 	const off = "bg-red-600 hover:bg-red-700 text-white";
@@ -138,7 +158,7 @@ const ControlBar = ({ darkMode, roomId, status, muted, cameraOff, trouble = {}, 
 
 			<div className="flex items-center justify-end gap-1 sm:gap-2">
 				{showInfo && button("Meeting details", onToggleInfo, infoOpen ? on : plain, <MdInfoOutline />)}
-				<MoreMenu darkMode={darkMode} quality={quality} onQuality={onQuality} onToggleDarkMode={onToggleDarkMode} removeName={removeName} onRemove={onRemove} className={`${round} ${plain}`} />
+				<MoreMenu darkMode={darkMode} quality={quality} onQuality={onQuality} onPopOut={onPopOut} onToggleDarkMode={onToggleDarkMode} removeName={removeName} onRemove={onRemove} className={`${round} ${plain}`} />
 			</div>
 		</footer>
 	);
