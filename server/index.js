@@ -78,6 +78,15 @@ async function verifyGoogleToken(token) {
     return null;
   }
 }
+// Room codes are free text: abc-defg-hij, older 8-character codes, or a name someone typed. Socket.IO also has a room
+// per socket, named after its id, so ours get a prefix no socket id can have: any code is then just a room, live id or not
+const ROOM_PREFIX = "code:";
+const MAX_ROOM_CODE = 200;
+const INVALID_ROOM = "This room link is not valid.";
+const ROOM_EVENTS = new Set(["room:join", "room:peek", "room:leave", "room:remove", "room:admit", "room:deny"]);
+const roomKey = code => (typeof code === "string" && code.trim() && code.length <= MAX_ROOM_CODE && !/[\x00-\x1f\x7f]/.test(code) ? ROOM_PREFIX + code : null);
+const codeOf = key => key.slice(ROOM_PREFIX.length);
+
 // The random id a browser tab sends with room:join and room:peek, or null
 const validClientId = id => (typeof id === "string" && /^[\w-]{16,64}$/.test(id) ? id : null);
 // What the other person gets instead of the clientId, which would let them take this seat
@@ -181,7 +190,7 @@ function settleHost(room, leaving) {
     return;
   }
   host.key = here.length ? tabOf(here[0]) : kept[0];
-  here[0]?.emit("room:host", { room });
+  here[0]?.emit("room:host", { room: codeOf(room) });
   sendRequests(room);
 }
 
@@ -195,7 +204,7 @@ const hostFor = (room, socket) => {
 function sendRequests(room) {
   const host = hosts.get(room);
   const socket = host && membersOf(room).find(s => tabOf(s) === host.key);
-  socket?.emit("room:requests", { room, requests: [...host.waiting].map(([id, request]) => ({ id, name: request.socket.data.name })) });
+  socket?.emit("room:requests", { room: codeOf(room), requests: [...host.waiting].map(([id, request]) => ({ id, name: request.socket.data.name })) });
 }
 
 // Asked only of someone new: not the first person, the host coming back, or a tab returning to its own seat
@@ -226,7 +235,7 @@ function askHost(room, socket, tab, resume, ack) {
   const id = randomBytes(8).toString("hex");
   host.waiting.set(id, { socket, tab, key, resume, ack });
   socket.data.request = { room, id };
-  socket.emit("room:waiting", { room });
+  socket.emit("room:waiting", { room: codeOf(room) });
   sendRequests(room);
 }
 
@@ -257,9 +266,12 @@ io.on("connection", socket => {
   socket.emit("app:version", { version: PROTOCOL_VERSION });
   socket.emit("stats:update", stats.current());
 
-  // Every event carries an object payload; drop anything else before a handler can throw on it
-  socket.use(([, data], next) => {
-    if (data !== null && typeof data === "object") next();
+  // Every event carries an object payload; drop anything else before a handler can throw on it.
+  // Room events get the internal room key, or null for a code that is not valid
+  socket.use(([event, data], next) => {
+    if (data === null || typeof data !== "object") return;
+    if (ROOM_EVENTS.has(event)) data.room = roomKey(data.room);
+    next();
   });
 
   // Sign in (or out, with a null token). socket.data.user is the only identity the server trusts.
@@ -272,9 +284,8 @@ io.on("connection", socket => {
   // resume: the tab still has its call running and wants to keep it
   socket.on("room:join", async ({ room, name, clientId, resume }, ack) => {
     if (!ownsSeat(room, validClientId(clientId)) && joinLimited(socket, ack)) return;
-    if (typeof room !== "string" || !room || typeof ack !== "function") return;
-    // Every socket also sits in a room named after its own id; joining one of those would put a stranger "in the same room"
-    if (io.sockets.sockets.has(room)) return ack({ full: true });
+    if (typeof ack !== "function") return;
+    if (!room) return ack({ full: true, error: INVALID_ROOM });
     const key = validClientId(clientId) ?? `socket:${socket.id}`;
     if (hosts.get(room)?.removed.has(key)) return ack({ full: true, removed: true, error: REMOVED });
     if (hosts.get(room)?.denied.has(key)) return ack({ full: true, denied: true, error: DENIED });
@@ -323,7 +334,7 @@ io.on("connection", socket => {
 
   // Email the room link to a guest; see invite.js for the rules
   socket.on("invite:send", async (payload, ack) => {
-    const result = await sendInvite(socket, payload, ALLOWED_ORIGINS, GOOGLE_CLIENT_ID);
+    const result = await sendInvite(socket, payload, ALLOWED_ORIGINS, GOOGLE_CLIENT_ID, roomKey);
     if (typeof ack === "function") ack(result);
   });
 
@@ -331,7 +342,7 @@ io.on("connection", socket => {
   // A seat kept for this tab itself (its connection dropped, then it reloaded) is not counted
   socket.on("room:peek", ({ room, clientId }, ack) => {
     if (peekLimited(socket, ack)) return;
-    if (typeof room !== "string" || !room || typeof ack !== "function") return;
+    if (typeof ack !== "function") return;
     // Only how many: anyone with the room code can ask, so never who (names are shown once you are in the call)
     const count = othersInRoom(room, socket, validClientId(clientId)).length;
     ack({ count, full: count >= MAX_ROOM_SIZE });
@@ -364,7 +375,7 @@ io.on("connection", socket => {
     releaseSeat(room, tab);
     membersOf(room).filter(s => tabOf(s) === tab).forEach(s => {
       s.leave(room);
-      s.emit("room:removed", { room });
+      s.emit("room:removed", { room: codeOf(room) });
     });
     ack({ ok: true });
     socket.emit("user:left", { id: to, removed: true });

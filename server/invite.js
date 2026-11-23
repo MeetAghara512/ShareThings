@@ -110,12 +110,12 @@ function buildEmail({ user, name, to, link, start }) {
 }
 
 // Validates the request, sends the email and returns the ack: { ok: true } or { error }. Never throws.
-async function sendInvite(socket, { to, room, when }, allowedOrigins, googleClientId) {
+async function sendInvite(socket, { to, room, when }, allowedOrigins, googleClientId, roomKey) {
   try {
     const user = socket.data.user;
     if (!user) return { error: "Sign in with Google to send invites." };
 
-    if (typeof room !== "string" || !room || room === socket.id || !socket.rooms.has(room)) {
+    if (!socket.rooms.has(roomKey(room))) {
       return { error: "You can only invite someone to a room you are in." };
     }
 
