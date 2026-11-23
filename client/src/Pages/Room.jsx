@@ -656,6 +656,41 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		chat: () => chat.setOpen(!chat.getState().open),
 		share: isScreen ? stopShare : startShare,
 	}, joined);
+	// Pop out: their video in the browser's floating window, with mic, camera and hang-up buttons (Media Session)
+	const remoteVideoRef = useRef(null);
+	const hasPicture = showRemote && (bigStream !== remoteStream || (remoteMedia.video && !remoteMedia.paused));
+	const popOut = () => remoteVideoRef.current?.requestPictureInPicture().catch(e => console.error("Could not pop out the video", e));
+	const closePopOut = () => document.pictureInPictureElement && document.exitPictureInPicture().catch(() => {});
+	const callActions = useRef({});
+	callActions.current = {
+		togglemicrophone: deviceTrouble.audio ? () => fixDevice("audio") : handleToggleMic,
+		togglecamera: deviceTrouble.video ? () => fixDevice("video") : handleToggleCamera,
+		hangup: handleCutCall,
+	};
+	useEffect(() => {
+		if (!joined || !navigator.mediaSession) return;
+		const setAction = (action, handler) => {
+			try {
+				navigator.mediaSession.setActionHandler(action, handler);
+			} catch {
+				// a browser without this action
+			}
+		};
+		const actions = Object.keys(callActions.current);
+		actions.forEach(action => setAction(action, () => callActions.current[action]()));
+		return () => actions.forEach(action => setAction(action, null));
+	}, [joined]);
+	useEffect(() => {
+		if (!joined) return;
+		navigator.mediaSession?.setMicrophoneActive?.(hasMic && !muted)?.catch?.(() => {});
+		navigator.mediaSession?.setCameraActive?.(hasCamera && !cameraOff)?.catch?.(() => {});
+	}, [joined, hasMic, hasCamera, muted, cameraOff]);
+	// Nobody to show (a rebuild, they left) or leaving the room: the floating window closes
+	useEffect(() => {
+		if (!showRemote) closePopOut();
+	}, [showRemote]);
+	useEffect(() => closePopOut, []);
+
 	// A first letter in a circle, for someone without a camera
 	const avatar = (name, size) => (
 		<span className={`${size} rounded-full bg-indigo-600 text-white font-semibold flex items-center justify-center uppercase`}>{(name || "?").trim().charAt(0)}</span>
@@ -741,7 +776,10 @@ return (
 								playsInline
 								muted
 								className="w-full h-full object-contain"
-								ref={(v) => v && v.srcObject !== bigStream && (v.srcObject = bigStream)}
+								ref={(v) => {
+									remoteVideoRef.current = v;
+									if (v && v.srcObject !== bigStream) v.srcObject = bigStream;
+								}}
 							/>
 						)}
 						{showRemote && (!remoteMedia.video || remoteMedia.paused) && bigStream === remoteStream && (
@@ -883,6 +921,7 @@ return (
 					onRemove={() => setRemoving(remoteSocketId)}
 					quality={qualityMode}
 					onQuality={setQualityMode}
+					onPopOut={hasPicture && document.pictureInPictureEnabled ? popOut : null}
 					onLeave={handleCutCall}
 				/>
 				<ChatPanel darkMode={darkMode} remoteName={remoteName} />
