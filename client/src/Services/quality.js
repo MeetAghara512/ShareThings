@@ -146,16 +146,17 @@ export const useAdaptiveQuality = ({ socket, remoteSocketId, callStart, remoteSt
 		};
 	}, [socket, remoteSocketId, callStart, remoteStream, remoteScreen, layout, mode]);
 
-	// Fed by CallStatus's stats poll (every 2 s): step the camera down on a weak network, back up when it is good
-	const onStats = useCallback(({ quality, sentLoss, sentBytes, at }) => {
+	// Fed by CallStatus's stats poll (every 2 s): step the camera down on a weak network, back up when it is good.
+	// Only what we send counts: loss on the video we receive is the other person's upload, not ours
+	const onStats = useCallback(({ rtt, sentLoss, sentBytes, at }) => {
 		const r = runs.current;
 		const cameraMid = peer.lane("video")?.mid;
 		const bytes = sentBytes[cameraMid];
 		const kbps = r.sent && bytes !== undefined ? ((bytes - r.sent.bytes) * 8) / (at - r.sent.at) : null;
 		r.sent = bytes !== undefined ? { bytes, at } : null;
-		const bad = quality === "poor" || sentLoss >= 0.1;
+		const bad = rtt >= 0.4 || sentLoss >= 0.1;
 		const failing = sentLoss >= 0.25 || (level < 2 && cameraOn && kbps !== null && kbps < 20);
-		const good = quality === "good" && sentLoss < 0.02;
+		const good = rtt < 0.15 && sentLoss < 0.02;
 		r.bad = bad ? r.bad + 1 : 0;
 		r.failing = failing ? r.failing + 1 : 0;
 		r.good = good ? r.good + 1 : 0;
