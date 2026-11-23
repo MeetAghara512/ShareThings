@@ -96,8 +96,8 @@ function peekLimited(socket, ack) {
   return true;
 }
 
-// True when this stats:get is over the socket's limit. It then gets no answer, so the join screen's network check
-// counts it as a lost round trip, never as a good one
+// True when this stats:get is over the socket's limit. It is then answered { limited: true }, so the join screen's
+// network check says to try again later instead of calling a good connection weak
 const statsLimited = socket => !isLocal(socket) && !allow(counts.socketStats, socket.id, MAX_STATS_PER_SOCKET);
 
 // True when this address already has max of the sockets waiting to be let in to one room
