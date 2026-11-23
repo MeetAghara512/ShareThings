@@ -55,7 +55,7 @@ const MutedWarning = ({ stream, muted, hint = "press the mic button to unmute" }
 
 	if (!shown) return null;
 	return (
-		<div role="status" className="absolute z-20 top-14 left-1/2 -translate-x-1/2 w-max max-w-[calc(100%-1.5rem)] px-4 py-2 rounded-full bg-black/80 text-white text-sm shadow-lg flex items-center gap-2">
+		<div role="status" className="w-max max-w-full px-4 py-2 rounded-full bg-black/80 text-white text-sm shadow-lg flex items-center gap-2">
 			<MdMicOff className="shrink-0 text-lg text-red-400" />
 			<span>You're muted — {hint}</span>
 		</div>

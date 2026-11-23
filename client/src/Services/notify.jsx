@@ -2,13 +2,26 @@
 // Only after the person allowed notifications from the "Notify me" button; nothing at all if they said no
 let audio = null;
 
-export const notifyPermission = () => (typeof Notification === "undefined" ? "denied" : Notification.permission);
+// Android Chrome has Notification, but its constructor always throws a TypeError. Data that cannot be stored makes
+// the other browsers refuse with a different error before anything is shown
+const pageCanNotify = () => {
+	if (typeof Notification === "undefined") return false;
+	try {
+		new Notification("", { data: () => {} }).close();
+	} catch (e) {
+		return e.name !== "TypeError";
+	}
+	return true;
+};
+let canNotify;
+
+export const notifyPermission = () => ((canNotify ??= pageCanNotify()) ? Notification.permission : "denied");
 
 // From a click: ask once, and get the sound ready while the click allows audio
 export const allowJoinNotice = async () => {
 	try {
 		audio ??= new AudioContext();
-		audio.resume();
+		audio.resume().catch(() => {});
 	} catch {}
 	return Notification.requestPermission();
 };

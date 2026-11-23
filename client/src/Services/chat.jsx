@@ -77,6 +77,7 @@ export const registerProof = hooks => {
 
 // The current connection's channels. A new connection (peer.reset) ends the old one
 let link = null;
+let lastPeer = null; // who the last connection was with, until they really leave
 
 const attach = (chat, fileChannel) => {
 	endLink();
@@ -102,7 +103,14 @@ const endLink = () => {
 };
 
 // The other person really left the room (the server's user:left): noted under the conversation, if there is one
-export const peerLeft = () => state.items.length > 0 && add({ kind: "note", text: `${peerName || "The other person"} left the call` });
+export const peerLeft = ({ removed } = {}) => {
+	if (removed && lastPeer) files.cancelFrom?.(lastPeer); // only once the server confirmed the removal
+	lastPeer = null;
+	if (state.items.length > 0) add({ kind: "note", text: `${peerName || "The other person"} ${removed ? "was removed" : "left the call"}` });
+};
+
+// The host removed this person: whatever was still going to them stops for good
+export const forgetPeer = () => lastPeer && files.forget?.(lastPeer);
 
 peer.onDataChannels = attach;
 if (peer.chat) attach(peer.chat, peer.files);
@@ -110,6 +118,7 @@ if (peer.chat) attach(peer.chat, peer.files);
 // Leaving the room page: nothing is kept
 export const clearChat = () => {
 	endLink();
+	lastPeer = null;
 	files.clear?.();
 	state.items.forEach(i => i.url && URL.revokeObjectURL(i.url));
 	set({ ready: false, filesOk: false, open: false, unread: 0, items: [] });
@@ -120,7 +129,7 @@ const onChat = (l, data) => {
 	const msg = parse(data);
 	if (msg?.type === "hello" && !l.ready) {
 		l.ready = true;
-		l.peer = typeof msg.me === "string" ? msg.me.slice(0, 64) : null;
+		l.peer = lastPeer = typeof msg.me === "string" ? msg.me.slice(0, 64) : null;
 		l.version = msg.v;
 		// Files need the same version on both sides; chat works with any
 		set({ ready: true, filesOk: msg.v === 2 });

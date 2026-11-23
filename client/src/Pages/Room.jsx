@@ -53,6 +53,8 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	const [infoOpen, setInfoOpen] = useState(true); // the "Your meeting is ready" card
 	const [trouble, setTrouble] = useState({}); // { audio, video }: why a device does not work (see devices.jsx)
 	const [help, setHelp] = useState(null); // the device whose fix is shown
+	const [isHost, setIsHost] = useState(false); // only the server decides; it can remove the other person
+	const [removing, setRemoving] = useState(null); // the socket id the "Remove?" question is about
 
 	// idle | calling (we sent the offer) | active. Like Google Meet there is no ringing:
 	// once both people are in the room the call connects on its own
@@ -97,9 +99,21 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		}
 	};
 
+	// The host removed us: camera, mic, screen and connection stop now, and the server keeps this tab out
+	const handleRemoved = useCallback(() => {
+		recovery.stop();
+		clearTimeout(connectTimerRef.current);
+		myStreamRef.current?.getTracks().forEach(t => t.stop());
+		myStreamRef.current = null;
+		screenTrackRef.current?.stop();
+		peer.reset();
+		navigate(`/left/${encodeURIComponent(roomId)}`, { replace: true, state: { reason: "removed" } });
+	}, [navigate, roomId]);
+
 	// Join the room; the server replies with who is already there and the ICE servers to use
 	const joinRoom = useCallback(() => {
-		socket.emit("room:join", { room: roomId, name: myName, clientId: clientId() }, ({ full, error, peerId, peerName, peerSeat, server, iceServers }) => {
+		socket.emit("room:join", { room: roomId, name: myName, clientId: clientId() }, ({ full, removed, error, peerId, peerName, peerSeat, host, server, iceServers }) => {
+			if (removed) return handleRemoved();
 			if (full) {
 				alert(error || "This room is full."); // error: too many attempts from this internet address
 				return navigate("/");
@@ -107,12 +121,13 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 			iceServersRef.current = iceServers;
 			serverRef.current = server;
 			remoteSeatRef.current = peerSeat;
+			setIsHost(host === true);
 			// A call can start before this reply arrives (someone left and came straight back): keep its connection
 			if (callStateRef.current === "idle") peer.reset(iceServers);
 			setRemoteSocketId(peerId);
 			setRemoteName(peerName);
 		});
-	}, [socket, roomId, myName, navigate]);
+	}, [socket, roomId, myName, navigate, handleRemoved]);
 
 	// Join only after the preview, so nobody sees us before that.
 	// Leaving the page (e.g. browser Back) frees the camera, the connection and our place in the room
@@ -368,11 +383,13 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		// What we sent while offline waits in Socket.IO's buffer. The server only relays between people in the
 		// same room, so the rejoin has to reach it first
 		const queued = socket.sendBuffer.splice(0);
-		socket.emit("room:join", { room: roomId, name: myName, clientId: clientId(), resume: true }, ({ full, error, peerId, peerName, peerSeat, peerHeld, resumed, server, iceServers }) => {
+		socket.emit("room:join", { room: roomId, name: myName, clientId: clientId(), resume: true }, ({ full, removed, error, peerId, peerName, peerSeat, peerHeld, resumed, host, server, iceServers }) => {
+			if (removed) return handleRemoved();
 			if (full) {
 				alert(error || "This room is full.");
 				return navigate("/");
 			}
+			setIsHost(host === true);
 			const restarted = server !== serverRef.current;
 			serverRef.current = server;
 			iceServersRef.current = iceServers;
@@ -395,7 +412,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 			setRemoteName(peerName);
 		});
 		socket.sendBuffer.push(...queued);
-	}, [socket, roomId, myName, navigate, resetCall]);
+	}, [socket, roomId, myName, navigate, resetCall, handleRemoved]);
 
 	const handleReconnect = useCallback(() => (callStateRef.current === "active" ? rejoinRoom() : handleUserLeft()), [rejoinRoom, handleUserLeft]);
 
@@ -416,10 +433,23 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	// Closing or reloading the tab is leaving on purpose: free our seat now, not after the grace period (best effort)
 	useEffect(() => {
 		if (!joined) return;
-		const leave = () => socket.emit("room:leave", { room: roomId });
+		const leave = () => socket.emit("room:leave", { room: roomId, closing: true });
 		window.addEventListener("pagehide", leave);
 		return () => window.removeEventListener("pagehide", leave);
 	}, [joined, socket, roomId]);
+
+	// The host removed us, or the host left and we take over
+	useEffect(() => {
+		if (!joined) return;
+		const onRemoved = ({ room }) => room === roomId && handleRemoved();
+		const onHost = ({ room }) => room === roomId && setIsHost(true);
+		socket.on("room:removed", onRemoved);
+		socket.on("room:host", onHost);
+		return () => {
+			socket.off("room:removed", onRemoved);
+			socket.off("room:host", onHost);
+		};
+	}, [joined, socket, roomId, handleRemoved]);
 
 	// Socket events, once joined (a reconnect while on the preview must not join the room)
 	useEffect(() => {
@@ -441,6 +471,18 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 			socket.io.off("reconnect", handleReconnect);
 		};
 	}, [joined, socket, handleUserJoined, handleUserLeft, handleIncomingCall, handleCallAccepted, handleIceCandidate, handleMediaState, handleReconnect]);
+
+	// Their video comes straight from their browser, so our side closes the connection at once and does not rely on
+	// theirs. The server handles the event first; if it refuses, the join in handleUserLeft finds them and the call reconnects
+	const removeRemote = () => {
+		const to = removing;
+		setRemoving(null);
+		if (to !== remoteSocketId) return;
+		if (!socket.connected) return alert("You are reconnecting. Try again in a moment.");
+		socket.emit("room:remove", { room: roomId, to }, ({ error }) => error && alert(error));
+		chat.forgetPeer();
+		handleUserLeft();
+	};
 
 	// The screen goes in its own lane next to the camera, so the camera and mic keep running.
 	// While waiting alone there is no lane yet: setupMedia puts the screen on the next call
@@ -504,10 +546,13 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		});
 	}, [myStream]);
 
-	// Allowed in the address bar during the call: the device starts by itself
+	// Allowed in the address bar during the call: the device starts by itself, unless it was turned off on
+	// purpose. Then it is not opened at all (that would light the camera); its red button still opens it
+	const offRef = useRef({});
+	offRef.current = { audio: muted, video: cameraOff };
 	useEffect(() => {
 		if (!joined) return;
-		const stops = ["audio", "video"].map(kind => onGranted(kind, () => troubleRef.current[kind] && fixDevice(kind)));
+		const stops = ["audio", "video"].map(kind => onGranted(kind, () => troubleRef.current[kind] && !offRef.current[kind] && fixDevice(kind)));
 		return () => stops.forEach(stop => stop());
 	}, [joined, fixDevice]);
 
@@ -686,30 +731,44 @@ return (
 										{alone && <span>{hasCamera ? "Your camera is off" : "You (no camera)"}</span>}
 									</div>
 								)}
-								{!alone && <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-black/60 text-white text-xs">{hasCamera ? "You" : "You (no camera)"}</span>}
+								{!alone && <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-black/60 text-white text-xs">{!hasCamera ? "You (no camera)" : isHost ? "You (host)" : "You"}</span>}
 							</div>
 						)}
 						{!wide && status && (
 							<div className="absolute top-3 left-3 z-10 px-2 py-1 rounded bg-black/60 text-white text-xs">{status}</div>
 						)}
 						{isScreen && (
-							<div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 max-w-[calc(100%-2rem)] px-4 py-2 rounded-full bg-indigo-600 text-white text-sm font-semibold shadow flex items-center gap-2 whitespace-nowrap">
+							<div className={`absolute ${!wide && status ? "top-16" : "top-4"} left-1/2 -translate-x-1/2 z-10 max-w-[calc(100%-2rem)] px-4 py-2 rounded-full bg-indigo-600 text-white text-sm font-semibold shadow flex items-center gap-2 whitespace-nowrap`}>
 								<FaDesktop className="shrink-0" /> You are sharing your screen
 							</div>
 						)}
 						{/* Reactions float up over the sender: theirs above their name, yours above your own tile */}
 						{showRemote && <ReactionLayer mine={false} className="absolute z-20 bottom-12 left-4 w-24 h-0" />}
 						{!alone && <ReactionLayer mine className={`absolute z-20 bottom-3 right-3 ${chatOpen ? "w-24" : "w-32"} sm:w-56 aspect-video`} />}
-						<MutedWarning stream={myStream} muted={muted} hint={`press ${keyText("mic")} or the mic button to unmute`} />
-						{paused && (
-							<div role="status" className={`absolute ${isScreen ? "top-16" : "top-4"} left-1/2 -translate-x-1/2 z-10 max-w-[calc(100%-2rem)] px-4 py-2 rounded-full bg-amber-500 text-black text-sm font-semibold shadow text-center`}>
-								Weak connection — video paused, audio continues
-							</div>
-						)}
+						{/* Small notices stack here, under what is already at the top (phone status, sharing, "Notify me"), so none covers another */}
+						<div style={{ top: `${1 + 3 * ((!wide && status ? 1 : 0) + (isScreen ? 1 : 0) + (alone ? 1 : 0))}rem` }} className="absolute z-20 inset-x-2 flex flex-col items-center gap-2 pointer-events-none">
+							<MutedWarning stream={myStream} muted={muted} hint={`press ${keyText("mic")} or the mic button to unmute`} />
+							{paused && (
+								<div role="status" className="max-w-full px-4 py-2 rounded-full bg-amber-500 text-black text-sm font-semibold shadow text-center">
+									Weak connection — video paused, audio continues
+								</div>
+							)}
+						</div>
 						{help && deviceTrouble[help] && (
 							<DeviceHelp kind={help} trouble={deviceTrouble[help]} darkMode={darkMode} onClose={() => setHelp(null)} className="absolute z-30 bottom-3 left-1/2 -translate-x-1/2 w-[min(24rem,calc(100%-1.5rem))]" />
 						)}
 						{alone && <JoinNotice className={`absolute ${isScreen ? "top-16" : "top-4"} left-1/2 -translate-x-1/2 z-10`} />}
+						{isHost && removing && removing === remoteSocketId && (
+							<div className="absolute inset-0 z-40 flex items-center justify-center p-4 bg-black/60" onKeyDown={e => e.key === "Escape" && setRemoving(null)}>
+								<div role="alertdialog" aria-modal="true" aria-label="Remove from the call" className={`w-full max-w-xs max-h-full overflow-y-auto p-4 rounded-xl shadow-2xl space-y-4 text-center ${darkMode ? "bg-gray-800 text-gray-100" : "bg-white text-gray-900"}`}>
+									<p className="font-semibold break-words">Remove {remoteName || "this person"} from the call?</p>
+									<div className="flex justify-center gap-3">
+										<button type="button" autoFocus onClick={() => setRemoving(null)} className={`px-4 py-2 rounded-full font-semibold border ${darkMode ? "border-gray-600 hover:bg-gray-700" : "border-gray-300 hover:bg-gray-100"}`}>Cancel</button>
+										<button type="button" onClick={removeRemote} className="px-4 py-2 rounded-full font-semibold bg-red-600 hover:bg-red-700 text-white">Remove</button>
+									</div>
+								</div>
+							</div>
+						)}
 						{infoOpen && (
 							<MeetingCard darkMode={darkMode} roomId={roomId} alone={alone} copied={copied} onCopy={handleCopyLink} onClose={() => setInfoOpen(false)} />
 						)}
@@ -729,6 +788,8 @@ return (
 					onToggleShare={isScreen ? stopShare : startShare}
 					onToggleInfo={() => setInfoOpen(!infoOpen)}
 					onToggleDarkMode={toggleDarkMode}
+					removeName={isHost && remoteSocketId ? remoteName || "the other person" : null}
+					onRemove={() => setRemoving(remoteSocketId)}
 					quality={qualityMode}
 					onQuality={setQualityMode}
 					onLeave={handleCutCall}
