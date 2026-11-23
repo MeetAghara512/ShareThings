@@ -89,13 +89,13 @@ const CallStatus = ({ connection, since, reconnecting, onStats }) => {
 
 	const q = QUALITY[quality];
 	return (
-		<div className="flex items-center gap-3">
+		<div className="flex items-center gap-3 min-w-0">
 			<span className="tabular-nums">{formatDuration(Math.max(0, Math.floor((now - since) / 1000)))}</span>
 			{reconnecting ? (
 				<span className="text-yellow-500 animate-pulse">Reconnecting...</span>
 			) : q && (
-				<span className="flex items-center gap-1.5" title={theirs ? "Their video is weak" : `${q.text} connection`}>
-					<span className="flex items-end gap-0.5 h-3">
+				<span className="flex items-center gap-1.5 min-w-0" title={theirs ? "Their video is weak" : `${q.text} connection`}>
+					<span className="flex items-end gap-0.5 h-3 shrink-0">
 						{[1, 2, 3].map(n => (
 							<span key={n} className={`w-1 rounded-sm ${n <= q.bars ? q.color : "bg-gray-400/40"}`} style={{ height: `${n * 33}%` }} />
 						))}

@@ -827,7 +827,7 @@ return (
 							</div>
 						)}
 						{!wide && status && (
-							<div className="absolute top-3 left-3 z-10 px-2 py-1 rounded bg-black/60 text-white text-xs">{status}</div>
+							<div className={`absolute top-3 left-3 z-10 px-2 py-1 rounded bg-black/60 text-white text-xs ${remoteSharing ? "max-w-[calc(100%-11.25rem)] sm:max-w-[calc(100%-14.25rem)]" : ""}`}>{status}</div>
 						)}
 						{isScreen && (
 							<div style={belowTile ? { top: `${belowTile}rem` } : undefined} className={`absolute ${!wide && status ? "top-16" : "top-4"} left-1/2 -translate-x-1/2 z-10 max-w-[calc(100%-2rem)] px-4 py-2 rounded-full bg-indigo-600 text-white text-sm font-semibold shadow flex items-center gap-2 whitespace-nowrap`}>
