@@ -288,7 +288,7 @@ io.on("connection", socket => {
       s.emit("room:removed", { room });
     });
     ack({ ok: true });
-    socket.emit("user:left", { id: to });
+    socket.emit("user:left", { id: to, removed: true });
   });
 
   socket.on("disconnecting", reason => {
