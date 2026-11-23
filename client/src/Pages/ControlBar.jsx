@@ -33,6 +33,9 @@ export const DeviceHelp = ({ kind, trouble, darkMode, onClose, className = "" })
 // The call's one row of controls, like Google Meet: time, room and call status on the left, round
 // icon buttons in the middle, meeting details and the theme on the right. trouble: a mic or camera
 // that is blocked or missing; its button is red with a "!" and its click tries to fix it
+// Phones cannot share their screen (iPhone Safari and Android Chrome have no getDisplayMedia): no button there
+const CAN_SHARE_SCREEN = !!navigator.mediaDevices?.getDisplayMedia;
+
 const ControlBar = ({ darkMode, roomId, status, muted, cameraOff, trouble = {}, isScreen, infoOpen, onToggleMic, onToggleCamera, onToggleShare, onToggleInfo, onToggleDarkMode, onLeave }) => {
 	const round = "w-10 h-10 sm:w-12 sm:h-12 shrink-0 rounded-full flex items-center justify-center text-xl transition-colors";
 	const idle = darkMode ? "bg-gray-700 hover:bg-gray-600 text-white" : "bg-gray-200 hover:bg-gray-300 text-gray-800";
@@ -63,7 +66,7 @@ const ControlBar = ({ darkMode, roomId, status, muted, cameraOff, trouble = {}, 
 				{trouble.video
 					? button(troubleText("video", trouble.video), onToggleCamera, off, <MdVideocamOff />, true)
 					: button(cameraOff ? "Turn on camera" : "Turn off camera", onToggleCamera, cameraOff ? off : idle, cameraOff ? <MdVideocamOff /> : <MdVideocam />)}
-				{button(isScreen ? "Stop sharing" : "Share screen", onToggleShare, isScreen ? on : idle, <MdPresentToAll />)}
+				{CAN_SHARE_SCREEN && button(isScreen ? "Stop sharing" : "Share screen", onToggleShare, isScreen ? on : idle, <MdPresentToAll />)}
 				<ChatButton className={round} look={idle} />
 				<button type="button" onClick={onLeave} title="Leave call" aria-label="Leave call" className={`${round} w-14 sm:w-16 ${off}`}>
 					<MdCallEnd />

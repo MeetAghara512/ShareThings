@@ -426,6 +426,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	// The screen goes in its own lane next to the camera, so the camera and mic keep running.
 	// While waiting alone there is no lane yet: setupMedia puts the screen on the next call
 	const startShare = async () => {
+		if (!navigator.mediaDevices?.getDisplayMedia) return; // phones: not possible (the button is hidden there)
 		try {
 			const [track] = (await navigator.mediaDevices.getDisplayMedia({ video: true })).getVideoTracks();
 			if (!myStreamRef.current) return track.stop(); // left the room while choosing
