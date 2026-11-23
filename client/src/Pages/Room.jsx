@@ -688,6 +688,8 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		query.addEventListener("change", update);
 		return () => query.removeEventListener("change", update);
 	}, []);
+	// Below the small swap tile (top right) where the stage is too narrow for both side by side
+	const belowTile = !wide && remoteSharing ? 8 : 0;
 	const joinRequests = isHost && <JoinRequests requests={requests} darkMode={darkMode} inline={!wide} onAdmit={id => answerRequest("room:admit", id)} onDeny={id => answerRequest("room:deny", id)} />;
 	const status = callStart && (
 		<div className="flex items-center gap-3 min-w-0">
@@ -828,7 +830,7 @@ return (
 							<div className="absolute top-3 left-3 z-10 px-2 py-1 rounded bg-black/60 text-white text-xs">{status}</div>
 						)}
 						{isScreen && (
-							<div className={`absolute ${!wide && status ? "top-16" : "top-4"} left-1/2 -translate-x-1/2 z-10 max-w-[calc(100%-2rem)] px-4 py-2 rounded-full bg-indigo-600 text-white text-sm font-semibold shadow flex items-center gap-2 whitespace-nowrap`}>
+							<div style={belowTile ? { top: `${belowTile}rem` } : undefined} className={`absolute ${!wide && status ? "top-16" : "top-4"} left-1/2 -translate-x-1/2 z-10 max-w-[calc(100%-2rem)] px-4 py-2 rounded-full bg-indigo-600 text-white text-sm font-semibold shadow flex items-center gap-2 whitespace-nowrap`}>
 								<FaDesktop className="shrink-0" /> You are sharing your screen
 							</div>
 						)}
@@ -836,7 +838,7 @@ return (
 						{showRemote && <ReactionLayer mine={false} className="absolute z-20 bottom-12 left-4 w-24 h-0" />}
 						{!alone && <ReactionLayer mine className={`absolute z-20 bottom-3 right-3 ${chatOpen ? "w-24" : "w-32"} sm:w-56 aspect-video`} />}
 						{/* Small notices stack here, under what is already at the top (phone status, sharing, "Notify me"), so none covers another */}
-						<div style={{ top: `${1 + 3 * ((!wide && status ? 1 : 0) + (isScreen ? 1 : 0) + (alone ? 1 : 0))}rem` }} className="absolute z-30 inset-x-2 bottom-2 flex flex-col items-center gap-2 pointer-events-none">
+						<div style={{ top: `${Math.max(belowTile + (isScreen ? 3 : 0), 1 + 3 * ((!wide && status ? 1 : 0) + (isScreen ? 1 : 0) + (alone ? 1 : 0)))}rem` }} className="absolute z-30 inset-x-2 bottom-2 flex flex-col items-center gap-2 pointer-events-none">
 							{!wide && joinRequests}
 							<MutedWarning stream={myStream} muted={muted} hint={`press ${keyText("mic")} or the mic button to unmute`} />
 							{paused && (
