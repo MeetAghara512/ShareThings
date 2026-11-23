@@ -30,6 +30,7 @@ const CONNECT_FAILED = "Could not connect. Reload the page to try again.";
 // The other side answers within a second or two; if no answer arrives by then, it failed on their end
 const CONNECT_TIMEOUT = 20000;
 const CONNECTION_LOST = "Connection lost. Reload the page to try again.";
+const OFFLINE_AFTER = 30000; // as long as the server keeps a seat: we may no longer be in the call and cannot be told
 
 const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	const { roomId } = useParams();
@@ -60,6 +61,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	const [removing, setRemoving] = useState(null); // the socket id the "Remove?" question is about
 	const [admission, setAdmission] = useState("joining"); // joining | asking (the host decides) | empty (nobody to ask) | null: in the room
 	const [requests, setRequests] = useState([]); // host: people asking to join
+	const [offline, setOffline] = useState(false); // no signaling for OFFLINE_AFTER and no call running
 
 	// idle | calling (we sent the offer) | active. Like Google Meet there is no ringing:
 	// once both people are in the room the call connects on its own
@@ -203,10 +205,11 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 
 	const handleUserJoined = useCallback(({ id, name, seat }) => {
 		const wasAlone = aloneRef.current;
+		const sameTabBack = !!seat && seat === remoteSeatRef.current; // back from a reload: they never really left
 		remoteSeatRef.current = seat ?? null;
 		setRemoteSocketId(id);
 		setRemoteName(name);
-		if (wasAlone) noticeJoin(name); // only while this tab is in the background and notifications are allowed
+		if (wasAlone && !sameTabBack) noticeJoin(name); // only while this tab is in the background and notifications are allowed
 	}, []);
 
 	// Call is over or never started: fresh connection. Like Google Meet, your camera, mic and
@@ -225,10 +228,11 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	}, [setCallState]);
 
 	// Other user left or our signaling dropped: back to a clean waiting state
-	const handleUserLeft = useCallback(() => {
+	const handleUserLeft = useCallback(({ back } = {}) => {
 		recovery.stop();
 		resetCall();
 		autoCalledRef.current = null; // the same person may come back with the same socket id (in-app Back, then join again)
+		if (!back) remoteSeatRef.current = null; // really gone: coming back later is a new arrival
 		setRemoteSocketId(null);
 		setRemoteName(null);
 		joinRoom();
@@ -603,6 +607,27 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		return () => stops.forEach(stop => stop());
 	}, [joined, fixDevice]);
 
+	// Long offline with the call down, we may have been removed without hearing it. Nothing stops by itself: a
+	// reconnect must find the devices as they were, so the person gets a button instead
+	useEffect(() => {
+		if (!joined) return;
+		let since = null;
+		const id = setInterval(() => {
+			since = socket.connected ? null : since ?? Date.now();
+			setOffline(since !== null && Date.now() - since >= OFFLINE_AFTER && peer.peer.connectionState !== "connected");
+		}, 1000);
+		return () => clearInterval(id);
+	}, [joined, socket]);
+
+	// Each device goes through its usual "ended" path; its button then turns it back on
+	const turnOffDevices = () => myStreamRef.current?.getTracks().forEach(track => {
+		track.stop();
+		track.onended?.();
+		setTrouble(t => ({ ...t, [track.kind]: "off" }));
+		if (track.kind === "video") setCameraOff(true); // so the buttons and the other person see it off too
+		else setMuted(true);
+	});
+
 	// Toggle mic on/off
 	const handleToggleMic = () => {
 		if (!myStreamRef.current) return;
@@ -840,6 +865,12 @@ return (
 						{/* Small notices stack here, under what is already at the top (phone status, sharing), so none covers another */}
 						<div style={{ top: `${Math.max(belowTile + (isScreen ? 3 : 0), 1 + 3 * ((!wide && status ? 1 : 0) + (isScreen ? 1 : 0)))}rem` }} className="absolute z-30 inset-x-2 bottom-2 flex flex-col items-center gap-2 pointer-events-none">
 							{alone && !admission && <JoinNotice className="pointer-events-auto" />}
+							{offline && (
+								<div role="alert" className="max-w-full px-4 py-2 rounded-2xl bg-amber-500 text-black text-sm font-semibold shadow flex flex-wrap items-center justify-center gap-x-3 gap-y-1 pointer-events-auto">
+									You're offline
+									{(hasCamera || hasMic) && <button type="button" onClick={turnOffDevices} className="underline">Turn off camera and mic</button>}
+								</div>
+							)}
 							{!wide && joinRequests}
 							<MutedWarning stream={myStream} muted={muted} hint={window.matchMedia("(pointer: fine)").matches ? `press ${keyText("mic")} or the mic button to unmute` : "tap the mic button to unmute"} />
 							{paused && (

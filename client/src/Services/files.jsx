@@ -105,7 +105,7 @@ const records = (mode, use) => {
 		tx.onerror = tx.onabort = () => reject(tx.error);
 	}));
 };
-const keepRecord = t => records("readwrite", s => s.put({ part: t.part, key: t.key, id: t.id, name: t.name, size: t.size, modified: t.modified, from: t.from, room: t.room, target: t.target || null, at: Date.now() })).catch(() => {});
+const keepRecord = t => records("readwrite", s => s.put({ part: t.part, key: t.key, id: t.id, name: t.name, size: t.size, modified: t.modified, from: t.from, peer: t.peer, room: t.room, target: t.target || null, at: Date.now() })).catch(() => {});
 const forget = part => records("readwrite", s => s.delete(part)).catch(() => {});
 // Only the very same file continues a partial one: same key, size, name and last-modified time
 const same = (x, msg) => x.key === msg.key && x.size === msg.size && x.name === cleanName(msg.name) && x.modified === msg.modified;
@@ -446,7 +446,7 @@ export const restore = async () => {
 			if (length === null) forget(record.part);
 			if (!(length >= 0)) continue; // gone, or open in another tab
 
-			const t = Object.assign(receiver(record), { part: record.part, from: record.from, room: record.room, target: record.target, accepted: true, status: "waiting" });
+			const t = Object.assign(receiver(record), { part: record.part, from: record.from, peer: record.peer, room: record.room, target: record.target, accepted: true, status: "waiting" });
 			t.have = length >= t.size ? t.blocks : Math.floor(length / BLOCK);
 			if ((t.have < t.blocks && record.room !== location.pathname) || known(record)) continue;
 			t.got = t.have * BLOCK;

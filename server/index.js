@@ -52,6 +52,8 @@ const CANNOT_REMOVE = "You can't remove this person.";
 const DENIED = "You were not let in.";
 const CANNOT_ANSWER = "That request is no longer open.";
 const NO_SEAT = "The call is full.";
+const ASKING_ELSEWHERE = "You are already asking to join another room.";
+const OPENED_ELSEWHERE = "This call was opened in another tab.";
 const MAX_WAITING = 5; // people asking to join one room at the same time
 const MAX_WAITING_PER_ADDRESS = 2; // of those, from one internet address
 const TOO_MANY_WAITING = "Too many people are waiting, try again soon";
@@ -218,14 +220,14 @@ const mustAsk = (room, socket, tab) => {
 function askHost(room, socket, tab, name, resume, ack) {
   const host = hosts.get(room);
   const mine = socket.data.request;
-  if (mine && mine.room !== room) return ack({ full: true });
+  if (mine && mine.room !== room) return ack({ full: true, error: ASKING_ELSEWHERE });
   const key = tab ?? `socket:${socket.id}`;
   if (mine) host.waiting.delete(mine.id);
   for (const [id, request] of host.waiting) {
     if (request.key !== key) continue; // the same tab on a newer connection replaces its request
     host.waiting.delete(id);
     request.socket.data.request = null;
-    request.ack({ full: true });
+    request.ack({ full: true, error: OPENED_ELSEWHERE });
   }
   if (host.waiting.size >= MAX_WAITING || waitingLimited(socket, [...host.waiting.values()].map(r => r.socket), MAX_WAITING_PER_ADDRESS)) {
     socket.data.request = null;
@@ -247,6 +249,13 @@ function dropRequest(socket) {
 }
 
 async function enterRoom(room, socket, tab, name, resume, ack) {
+  // One room per connection: an accepted join leaves the previous one
+  for (const other of [...socket.rooms]) {
+    if (other === socket.id || other === room) continue;
+    socket.to(other).emit("user:left", { id: socket.id });
+    socket.leave(other);
+    settleHost(other);
+  }
   socket.data.name = name; // only now: a refused join must not change the name of a request already shown to a host
   const resumed = takeSeat(room, socket, tab, resume);
   socket.join(room);
@@ -347,7 +356,7 @@ io.on("connection", socket => {
     // Only how many: anyone with the room code can ask, so never who (names are shown once you are in the call)
     const count = othersInRoom(room, socket, validClientId(clientId)).length;
     // names: only for tabs opened before the count existed, which crash without it. No real name. Remove after a release
-    ack({ count, full: count >= MAX_ROOM_SIZE, names: Array(count).fill("Someone") });
+    ack({ count, full: count >= MAX_ROOM_SIZE, names: Array(count).fill("Someone"), ...(!room && { invalid: INVALID_ROOM }) });
   });
 
   // The first page asks when it opens, since it may open after the numbers were sent

@@ -214,7 +214,7 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 
 	const displayName = name.trim();
 	// Joins with whatever works, even nothing: then you watch and listen
-	const canJoin = displayName && !peek?.full;
+	const canJoin = displayName && !peek?.full && !peek?.invalid;
 	// Real cameras take 1-3 s to open. A permission prompt left unanswered (slow) does not hold the join
 	const opening = loading && !slow;
 	// A server from before this change still sends names: then only their number is used
@@ -317,8 +317,8 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 					<h3 className="text-xl font-semibold">Ready to join?</h3>
 					<ServerStatus />
 					{peek && (
-						<p className={`text-sm font-medium ${peek.full ? "text-red-500" : "text-indigo-400"}`}>
-							{peek.full ? `${here}. This room is full.` : here}
+						<p className={`text-sm font-medium ${peek.full || peek.invalid ? "text-red-500" : "text-indigo-400"}`}>
+							{peek.invalid || (peek.full ? `${here}. This room is full.` : here)}
 						</p>
 					)}
 					<p className="text-sm opacity-60">No one in the room can see or hear you until you join.</p>
