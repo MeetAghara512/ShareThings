@@ -4,7 +4,7 @@ import { ChatButton } from "./ChatPanel";
 import { ReactionButton } from "./Reactions";
 import InviteForm from "./InviteForm";
 import { HELP, troubleText } from "../Services/devices";
-import { CAN_SHARE_SCREEN, SHORTCUTS, keyText, ariaKeys } from "../Services/shortcuts";
+import { CAN_SHARE_SCREEN, keyText, ariaKeys } from "../Services/shortcuts";
 import { MODES } from "../Services/quality";
 import { pickSpeaker, useSpeaker } from "./Speaker";
 
@@ -196,20 +196,6 @@ export const MeetingCard = ({ darkMode, roomId, alone, copied, onCopy, onClose }
 					<MdMailOutline className="text-lg" /> Invite by email
 				</button>
 			)}
-			{/* Only where there is a keyboard and a mouse, not on phones */}
-			<div className="hidden [@media(pointer:fine)]:block space-y-1.5 pt-1">
-				<h4 className="font-medium">Keyboard shortcuts</h4>
-				<dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
-					{SHORTCUTS.filter(s => s.action !== "share" || CAN_SHARE_SCREEN).map(s => (
-						<React.Fragment key={s.action}>
-							<dt><kbd className="font-mono text-xs">{keyText(s.action)}</kbd></dt>
-							<dd className="opacity-80">{s.label}</dd>
-						</React.Fragment>
-					))}
-					<dt><kbd className="font-mono text-xs">Esc</kbd></dt>
-					<dd className="opacity-80">Close the chat while typing in it</dd>
-				</dl>
-			</div>
 		</section>
 	);
 };
