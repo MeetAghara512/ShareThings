@@ -43,13 +43,18 @@ const MAX_ROOM_SIZE = 2;
 const SEAT_GRACE = 30000;
 // Seats kept for dropped connections: room -> Map(clientId -> { id, name, seat, timer }). Memory only
 const heldSeats = new Map();
+// Who runs each room: room -> { key, away, removed }. key: the host's tab, decided here and never by a client.
+// away: timer while that tab may be reloading. removed: tabs kept out until the room is empty. Memory only
+const hosts = new Map();
+const REMOVED = "You were removed from this call.";
+const CANNOT_REMOVE = "You can't remove this person.";
 // New on every start, so a client can tell "the server restarted and forgot all seats" from "my seat was given up"
 const SERVER_ID = randomBytes(8).toString("hex");
 
 // Bump when client and server must change together (same number as PROTOCOL_VERSION in
 // client/src/Pages/VersionBanner.jsx). Every new connection is told it, so a tab opened before a deploy
 // can offer a reload
-const PROTOCOL_VERSION = 2;
+const PROTOCOL_VERSION = 3;
 
 // Public identifier of the Google OAuth client (not a secret). Must match GOOGLE_CLIENT_ID in client/src/useContext/AuthProvider.jsx
 const GOOGLE_CLIENT_ID = "123263407226-ltqv9qfv6s58ocr5nvgk2vggoa0addhf.apps.googleusercontent.com";
@@ -108,6 +113,7 @@ function holdSeat(room, socket, reason) {
   const timer = setTimeout(() => {
     releaseSeat(room, clientId);
     io.to(room).emit("user:left", { id: socket.id });
+    settleHost(room);
   }, SEAT_GRACE);
   if (!heldSeats.has(room)) heldSeats.set(room, new Map());
   heldSeats.get(room).set(clientId, { id: socket.id, name, seat, timer });
@@ -124,6 +130,43 @@ function releaseSeat(room, clientId) {
   clearTimeout(seats?.get(clientId)?.timer);
   seats?.delete(clientId);
   if (seats?.size === 0) heldSeats.delete(room);
+}
+
+// A tab's key in the host and removed lists. The fallback has a ":", so no clientId can ever equal it
+const tabOf = socket => socket.data.clientId ?? `socket:${socket.id}`;
+const membersOf = room => [...(io.sockets.adapter.rooms.get(room) ?? [])].map(id => io.sockets.sockets.get(id)).filter(Boolean);
+
+// The first person into an empty room is the host; their tab stays host across a reload or a dropped connection
+function noteHost(room, socket) {
+  const host = hosts.get(room);
+  if (!host) hosts.set(room, { key: tabOf(socket), away: null, removed: new Set() });
+  else if (host.key === tabOf(socket)) {
+    clearTimeout(host.away);
+    host.away = null;
+  }
+}
+
+// Closing and reloading a tab look the same from here, so the host gets SEAT_GRACE to come back before anyone takes over
+function hostMayReturn(room, socket) {
+  const host = hosts.get(room);
+  if (!host || host.key !== socket.data.clientId || host.away) return;
+  host.away = setTimeout(() => {
+    host.away = null;
+    settleHost(room);
+  }, SEAT_GRACE);
+}
+
+// Someone left. If the host is gone for good, the person still here takes over and is told (someone with a kept
+// seat hears it in their join answer). An empty room forgets its host and who was removed
+function settleHost(room, leaving) {
+  const host = hosts.get(room);
+  if (!host || host.away) return;
+  const here = membersOf(room).filter(s => s !== leaving);
+  const kept = [...(heldSeats.get(room)?.keys() ?? [])];
+  if (here.some(s => tabOf(s) === host.key) || kept.includes(host.key)) return;
+  if (!here.length && !kept.length) return hosts.delete(room);
+  host.key = here.length ? tabOf(here[0]) : kept[0];
+  here[0]?.emit("room:host", { room });
 }
 
 io.on("connection", socket => {
@@ -148,19 +191,21 @@ io.on("connection", socket => {
     if (typeof room !== "string" || !room || typeof ack !== "function") return;
     // Every socket also sits in a room named after its own id; joining one of those would put a stranger "in the same room"
     if (io.sockets.sockets.has(room)) return ack({ full: true });
+    if (hosts.get(room)?.removed.has(validClientId(clientId))) return ack({ full: true, removed: true, error: REMOVED });
     // Display name shown to the other member: plain text, at most 40 characters
     socket.data.name = (typeof name === "string" && name.trim().slice(0, 40).trim()) || "Guest";
     const tab = validClientId(clientId);
     if (othersInRoom(room, socket, tab).length >= MAX_ROOM_SIZE) return ack({ full: true });
     const resumed = takeSeat(room, socket, tab, resume === true);
     socket.join(room);
+    noteHost(room, socket);
 
     const iceServers = await getIceServers();
     if (!socket.rooms.has(room)) return; // left or disconnected while waiting
     const peerId = [...io.sockets.adapter.rooms.get(room)].find(id => id !== socket.id) ?? null;
     const peerName = io.sockets.sockets.get(peerId)?.data.name ?? null;
     const peerSeat = io.sockets.sockets.get(peerId)?.data.seat ?? null;
-    ack({ peerId, peerName, peerSeat, peerHeld: heldSeats.has(room), resumed, server: SERVER_ID, iceServers });
+    ack({ peerId, peerName, peerSeat, peerHeld: heldSeats.has(room), resumed, host: hosts.get(room)?.key === tabOf(socket), server: SERVER_ID, iceServers });
     socket.to(room).emit("user:joined", { id: socket.id, name: socket.data.name, seat: socket.data.seat });
   });
 
@@ -218,15 +263,40 @@ io.on("connection", socket => {
   // The first page asks when it opens, since it may open after the numbers were sent
   socket.on("stats:get", (data, ack) => !statsLimited(socket) && typeof ack === "function" && ack(stats.current()));
 
-  socket.on("room:leave", ({ room }) => {
+  // closing: the tab is closing or reloading, so a host may be back in a moment
+  socket.on("room:leave", ({ room, closing }) => {
     if (room === socket.id || !socket.rooms.has(room)) return;
     socket.to(room).emit("user:left", { id: socket.id });
+    if (closing === true) hostMayReturn(room, socket);
     socket.leave(room);
+    settleHost(room);
+  });
+
+  // Only the room's current host, and only for someone else in that room, connected or with a kept seat.
+  // The same answer for every refusal. Their tab stays out until the room is empty
+  socket.on("room:remove", ({ room, to }, ack) => {
+    if (typeof ack !== "function") return;
+    const host = hosts.get(room);
+    if (!host || !socket.rooms.has(room) || host.key !== tabOf(socket)) return ack({ error: CANNOT_REMOVE });
+    const member = membersOf(room).find(s => s.id === to);
+    const held = [...(heldSeats.get(room) ?? [])].find(([, seat]) => seat.id === to);
+    const tab = member ? tabOf(member) : held?.[0];
+    if (!tab || tab === host.key) return ack({ error: CANNOT_REMOVE });
+    host.removed.add(tab);
+    releaseSeat(room, tab);
+    membersOf(room).filter(s => tabOf(s) === tab).forEach(s => {
+      s.leave(room);
+      s.emit("room:removed", { room });
+    });
+    ack({ ok: true });
+    socket.emit("user:left", { id: to, removed: true });
   });
 
   socket.on("disconnecting", reason => {
     socket.rooms.forEach(room => {
-      if (room !== socket.id && !holdSeat(room, socket, reason)) socket.to(room).emit("user:left", { id: socket.id });
+      if (room === socket.id) return;
+      if (!holdSeat(room, socket, reason)) socket.to(room).emit("user:left", { id: socket.id });
+      settleHost(room, socket);
     });
   });
 });
