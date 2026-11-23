@@ -147,7 +147,7 @@ const ControlBar = ({ darkMode, roomId, status, muted, cameraOff, trouble = {}, 
 // "Your meeting is ready", bottom-left on the stage: the link to share and the email invite
 export const MeetingCard = ({ darkMode, roomId, alone, copied, onCopy, onClose }) => {
 	const [inviting, setInviting] = useState(false);
-	const link = `${window.location.host}${window.location.pathname}`;
+	const link = `${window.location.host}${window.location.pathname}${window.location.hash}`;
 
 	return (
 		<section
@@ -164,7 +164,7 @@ export const MeetingCard = ({ darkMode, roomId, alone, copied, onCopy, onClose }
 			{alone && <p className="font-medium">You're the only one here</p>}
 			<p className="opacity-70">Share this link with the people you want in the call.</p>
 			<div className={`flex items-center gap-2 pl-3 rounded-lg ${darkMode ? "bg-gray-700" : "bg-gray-100"}`}>
-				<span className="flex-1 min-w-0 truncate" title={link}>{link}</span>
+				<span className="flex-1 min-w-0 break-all" title={link}>{link}</span>
 				<button type="button" onClick={onCopy} title={copied ? "Link copied" : "Copy link"} aria-label={copied ? "Link copied" : "Copy link"} className={`p-2.5 rounded-lg text-lg ${darkMode ? "hover:bg-gray-600" : "hover:bg-gray-200"}`}>
 					{copied ? <MdCheck className="text-green-500" /> : <MdContentCopy />}
 				</button>
