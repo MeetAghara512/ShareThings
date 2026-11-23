@@ -4,6 +4,7 @@ import { FaMoon, FaSun } from "react-icons/fa";
 import { useAuth, GoogleSignInButton } from "../useContext/AuthProvider";
 import ServerStatus from "./ServerStatus";
 import LiveCount from "./LiveCount";
+import { newRoomHash } from "../Services/roomSecret";
 
 // A new room code like Google Meet's: 10 random letters as abc-defg-hij, 26^10 ≈ 141 trillion codes,
 // so live rooms cannot be found by guessing. getRandomValues also works on plain-HTTP test pages.
@@ -22,7 +23,8 @@ const Lobby = ({ darkMode, toggleDarkMode }) => {
 			e.preventDefault();
 			// No room entered: create a new one with a random ID
 			const roomId = room.trim() || newRoomCode();
-			navigate(`/room/${encodeURIComponent(roomId)}`);
+			// Only a room made here gets a private-link secret: a typed code may already be someone else's room
+			navigate(`/room/${encodeURIComponent(roomId)}${room.trim() ? "" : newRoomHash()}`);
 		},
 		[room, navigate]
 	);

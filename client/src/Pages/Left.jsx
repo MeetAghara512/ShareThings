@@ -1,11 +1,13 @@
 import React from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
+import { cleanHash } from "../Services/roomSecret";
 
 // After leaving a call (or when it moved to another tab): Rejoin opens this room's join screen again,
 // where nobody sees or hears you until you join. It never sends you anywhere by itself. Someone removed by the host gets no Rejoin
 const Left = ({ darkMode }) => {
 	const { roomId } = useParams();
-	const reason = useLocation().state?.reason;
+	const location = useLocation();
+	const reason = location.state?.reason;
 	const elsewhere = reason === "other-tab";
 	const removed = reason === "removed";
 
@@ -21,7 +23,7 @@ const Left = ({ darkMode }) => {
 				</div>
 				<div className="flex flex-col sm:flex-row gap-3 justify-center">
 					{!removed && (
-						<Link to={`/room/${encodeURIComponent(roomId)}`} className="px-6 py-2.5 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold">
+						<Link to={`/room/${encodeURIComponent(roomId)}${cleanHash(location.hash)}`} className="px-6 py-2.5 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold">
 							Rejoin
 						</Link>
 					)}
