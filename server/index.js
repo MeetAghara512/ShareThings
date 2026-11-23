@@ -204,14 +204,15 @@ io.on("connection", socket => {
     if (typeof ack === "function") ack(result);
   });
 
-  // Names of the people in a room, for the join screen. Does not join it.
+  // How many people are in a room, for the join screen. Does not join it.
   // A seat kept for this tab itself (its connection dropped, then it reloaded) is not counted
   socket.on("room:peek", ({ room, clientId }, ack) => {
     if (peekLimited(socket, ack)) return;
     if (typeof room !== "string" || !room || typeof ack !== "function") return;
     // Only how many: anyone with the room code can ask, so never who (names are shown once you are in the call)
     const count = othersInRoom(room, socket, validClientId(clientId)).length;
-    ack({ count, full: count >= MAX_ROOM_SIZE });
+    // names: only for tabs opened before the count existed, which crash without it. No real name. Remove after a release
+    ack({ count, full: count >= MAX_ROOM_SIZE, names: Array(count).fill("Someone") });
   });
 
   // The first page asks when it opens, since it may open after the numbers were sent
