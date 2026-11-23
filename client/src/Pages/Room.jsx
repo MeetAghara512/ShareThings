@@ -12,6 +12,7 @@ import ChatPanel, { useChatOpen } from "./ChatPanel";
 import MutedWarning from "./MutedWarning";
 import { FileDropOverlay, useFileDrop } from "./FileDrop";
 import { ReactionLayer } from "./Reactions";
+import MovableTile from "./MovableTile";
 import { RemoteAudio } from "./Speaker";
 import { useCallShortcuts, keyText } from "../Services/shortcuts";
 import * as chat from "../Services/chat";
@@ -818,26 +819,31 @@ return (
 							</span>
 						)}
 						{remoteSharing && (
-							<button
-								type="button"
-								onClick={() => setSwapped(!swapped)}
-								title="Swap screen and camera"
-								aria-label="Swap screen and camera"
-								className="absolute top-4 right-4 z-10 w-36 sm:w-48 aspect-video bg-black border-white border-2 rounded-lg overflow-hidden shadow-md transition-colors hover:border-indigo-400"
+							<MovableTile
+								className="absolute top-4 right-4 z-10 w-36 sm:w-48 aspect-video"
+								frameClass="relative w-full h-full bg-black border-white border-2 rounded-lg overflow-hidden shadow-md transition-colors hover:border-indigo-400"
 							>
-								<video
-									autoPlay
-									playsInline
-									muted
-									className={`w-full h-full ${smallStream === remoteStream ? "object-cover" : "object-contain"}`}
-									ref={(v) => v && v.srcObject !== smallStream && (v.srcObject = smallStream)}
-								/>
-								{smallStream === remoteStream && (!remoteMedia.video || remoteMedia.paused) && (
-									<div className="absolute inset-0 flex items-center justify-center bg-zinc-800 text-gray-300">
-										{remoteMedia.hasCamera ? <FaVideoSlash size={24} /> : avatar(remoteName, "w-12 h-12 text-xl")}
-									</div>
-								)}
-							</button>
+								<button
+									type="button"
+									onClick={() => setSwapped(!swapped)}
+									title="Click to swap. Drag to move, drag a corner to resize"
+									aria-label="Swap screen and camera"
+									className="absolute inset-0 w-full h-full cursor-move"
+								>
+									<video
+										autoPlay
+										playsInline
+										muted
+										className={`w-full h-full ${smallStream === remoteStream ? "object-cover" : "object-contain"}`}
+										ref={(v) => v && v.srcObject !== smallStream && (v.srcObject = smallStream)}
+									/>
+									{smallStream === remoteStream && (!remoteMedia.video || remoteMedia.paused) && (
+										<div className="absolute inset-0 flex items-center justify-center bg-zinc-800 text-gray-300">
+											{remoteMedia.hasCamera ? <FaVideoSlash size={24} /> : avatar(remoteName, "w-12 h-12 text-xl")}
+										</div>
+									)}
+								</button>
+							</MovableTile>
 						)}
 						{remoteSocketId && callState !== "active" && (
 							<div className="absolute inset-0 flex items-center justify-center p-6 text-center text-white">
@@ -848,8 +854,14 @@ return (
 						)}
 						{myStream && (
 							// Your own camera, shown like a mirror (as in Google Meet; the other person gets the true picture).
-							// Alone it fills the stage; with someone there it is a small tile bottom-right
-							<div className={alone ? "absolute inset-0" : `absolute bottom-3 right-3 z-10 ${chatOpen ? "w-24" : "w-32"} sm:w-56 aspect-video border-white/70 border-2 rounded-lg overflow-hidden shadow-lg bg-zinc-800`}>
+							// Alone it fills the stage; with someone there it is a small tile you can move and resize
+							<MovableTile
+								fixed={alone}
+								title="Drag to move, drag a corner to resize"
+								overlay={!alone && <ReactionLayer mine className="absolute inset-0 z-20" />}
+								className={alone ? "absolute inset-0" : `absolute bottom-3 right-3 z-10 ${chatOpen ? "w-24" : "w-32"} sm:w-56 aspect-video`}
+								frameClass={alone ? "relative w-full h-full" : "relative w-full h-full border-white/70 border-2 rounded-lg overflow-hidden shadow-lg bg-zinc-800"}
+							>
 								<video
 									autoPlay
 									muted
@@ -864,7 +876,7 @@ return (
 									</div>
 								)}
 								{!alone && <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-black/60 text-white text-xs">{!hasCamera ? "You (no camera)" : isHost ? "You (host)" : "You"}</span>}
-							</div>
+							</MovableTile>
 						)}
 						{!wide && status && (
 							<div className={`absolute top-3 left-3 z-10 px-2 py-1 rounded bg-black/60 text-white text-xs ${remoteSharing ? "max-w-[calc(100%-11.25rem)] sm:max-w-[calc(100%-14.25rem)]" : ""}`}>{status}</div>
@@ -876,7 +888,6 @@ return (
 						)}
 						{/* Reactions float up over the sender: theirs above their name, yours above your own tile */}
 						{showRemote && <ReactionLayer mine={false} className="absolute z-20 bottom-12 left-4 w-24 h-0" />}
-						{!alone && <ReactionLayer mine className={`absolute z-20 bottom-3 right-3 ${chatOpen ? "w-24" : "w-32"} sm:w-56 aspect-video`} />}
 						{/* Small notices stack here, under what is already at the top (phone status, sharing), so none covers another */}
 						<div style={{ top: `${Math.max(belowTile + (isScreen ? 3 : 0), 1 + 3 * ((!wide && status ? 1 : 0) + (isScreen ? 1 : 0)))}rem` }} className="absolute z-30 inset-x-2 bottom-2 flex flex-col items-center gap-2 pointer-events-none">
 							{alone && !admission && <JoinNotice className="pointer-events-auto" />}
