@@ -685,6 +685,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		togglemicrophone: deviceTrouble.audio ? () => fixDevice("audio") : handleToggleMic,
 		togglecamera: deviceTrouble.video ? () => fixDevice("video") : handleToggleCamera,
 		hangup: handleCutCall,
+		enterpictureinpicture: () => hasPicture && popOut(), // Chrome calls this when you switch to another tab
 	};
 	useEffect(() => {
 		if (!joined || !navigator.mediaSession) return;
