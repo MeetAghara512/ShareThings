@@ -7,7 +7,7 @@ const { Server } = require("socket.io");
 const { OAuth2Client } = require("google-auth-library");
 const { sendInvite } = require("./invite");
 const { getIceServers } = require("./turn");
-const { limitConnections, joinLimited, peekLimited } = require("./limits");
+const { limitConnections, joinLimited, peekLimited, statsLimited } = require("./limits");
 const liveStats = require("./stats");
 
 const app = express();
@@ -215,7 +215,7 @@ io.on("connection", socket => {
   });
 
   // The first page asks when it opens, since it may open after the numbers were sent
-  socket.on("stats:get", (data, ack) => typeof ack === "function" && ack(stats.current()));
+  socket.on("stats:get", (data, ack) => !statsLimited(socket) && typeof ack === "function" && ack(stats.current()));
 
   socket.on("room:leave", ({ room }) => {
     if (room === socket.id || !socket.rooms.has(room)) return;
