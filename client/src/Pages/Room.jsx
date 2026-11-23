@@ -439,7 +439,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		return () => socket.off("disconnect", handleReplaced);
 	}, [joined, socket, navigate, roomId]);
 
-	// Closing or reloading the tab is leaving on purpose: free our seat now, not after the grace period (best effort)
+	// Closing or reloading the tab: tell the server now (best effort). It keeps the seat briefly in case this is a reload
 	useEffect(() => {
 		if (!joined) return;
 		const leave = () => socket.emit("room:leave", { room: roomId, closing: true });

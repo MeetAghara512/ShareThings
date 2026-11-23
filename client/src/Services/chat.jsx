@@ -103,7 +103,8 @@ const endLink = () => {
 };
 
 // The other person really left the room (the server's user:left): noted under the conversation, if there is one
-export const peerLeft = ({ removed } = {}) => {
+export const peerLeft = ({ removed, back } = {}) => {
+	if (back) return; // the same tab came back after a reload: a new connection, but nobody left
 	if (removed && lastPeer) files.cancelFrom?.(lastPeer); // only once the server confirmed the removal
 	lastPeer = null;
 	if (state.items.length > 0) add({ kind: "note", text: `${peerName || "The other person"} ${removed ? "was removed" : "left the call"}` });
