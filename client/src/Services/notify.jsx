@@ -21,7 +21,7 @@ export const notifyPermission = () => ((canNotify ??= pageCanNotify()) ? Notific
 export const allowJoinNotice = async () => {
 	try {
 		audio ??= new AudioContext();
-		audio.resume();
+		audio.resume().catch(() => {});
 	} catch {}
 	return Notification.requestPermission();
 };
