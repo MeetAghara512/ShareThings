@@ -10,6 +10,7 @@ import CallStatus from "./CallStatus";
 import Preview from "./Preview";
 import ChatPanel, { useChatOpen } from "./ChatPanel";
 import MutedWarning from "./MutedWarning";
+import { ReactionLayer } from "./Reactions";
 import { useCallShortcuts, keyText } from "../Services/shortcuts";
 import * as chat from "../Services/chat";
 import ControlBar, { DeviceHelp, MeetingCard } from "./ControlBar";
@@ -674,6 +675,9 @@ return (
 								<FaDesktop className="shrink-0" /> You are sharing your screen
 							</div>
 						)}
+						{/* Reactions float up over the sender: theirs above their name, yours above your own tile */}
+						{showRemote && <ReactionLayer mine={false} className="absolute z-20 bottom-12 left-4 w-24 h-0" />}
+						{!alone && <ReactionLayer mine className={`absolute z-20 bottom-3 right-3 ${chatOpen ? "w-24" : "w-32"} sm:w-56 aspect-video`} />}
 						<MutedWarning stream={myStream} muted={muted} hint={`press ${keyText("mic")} or the mic button to unmute`} />
 						{help && deviceTrouble[help] && (
 							<DeviceHelp kind={help} trouble={deviceTrouble[help]} darkMode={darkMode} onClose={() => setHelp(null)} className="absolute z-30 bottom-3 left-1/2 -translate-x-1/2 w-[min(24rem,calc(100%-1.5rem))]" />

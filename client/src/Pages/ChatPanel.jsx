@@ -5,6 +5,7 @@ import * as chat from "../Services/chat";
 import * as files from "../Services/files";
 import { useSocket } from "../useContext/SocketProvider";
 import { keyText, ariaKeys } from "../Services/shortcuts";
+import { ReactionButton } from "./Reactions";
 
 const useChat = () => useSyncExternalStore(chat.subscribe, chat.getState);
 // On wide screens the room makes space for the open panel, so it never covers the call controls
@@ -236,6 +237,8 @@ const ChatPanel = ({ darkMode, remoteName }) => {
 						className={`flex-1 min-w-0 px-4 py-2 rounded-full border text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 disabled:opacity-50 ` +
 							(darkMode ? "bg-gray-700 border-gray-600 placeholder-gray-400" : "bg-white border-gray-300 placeholder-gray-500")}
 					/>
+					{/* On phones the bar has no room for it */}
+					<ReactionButton className={iconButton} look={darkMode ? "hover:bg-gray-700" : "hover:bg-gray-100"} on="bg-indigo-600 text-white" darkMode={darkMode} boxClass="sm:hidden" end />
 					<button type="submit" disabled={!ready || !text.trim()} aria-label="Send" className={`${iconButton} bg-indigo-600 hover:bg-indigo-700 text-white`}>
 						<FaPaperPlane />
 					</button>

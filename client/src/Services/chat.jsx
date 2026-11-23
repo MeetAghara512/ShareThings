@@ -122,7 +122,39 @@ const onChat = (l, data) => {
 	} else if (msg?.type === "chat" && l.ready && typeof msg.text === "string" && msg.text.trim() && msg.text.length <= MAX_TEXT) {
 		add({ kind: "text", mine: false, name: peerName, text: msg.text });
 		bump();
+	} else if (msg?.type === "reaction" && l.ready && REACTIONS.includes(msg.emoji) && withinRate(reactionTimes.theirs)) {
+		reactionListeners.forEach(listener => listener({ emoji: msg.emoji, mine: false }));
 	}
+};
+
+// Reactions: { type: "reaction", emoji } on the chat channel. Only these six are ever shown, at most 5 per 3 s
+// from each side (extra taps, or a flood from the other side, are dropped)
+export const REACTIONS = ["👍", "❤️", "😂", "👏", "🎉", "😮"];
+const RATE = { count: 5, per: 3000 };
+const reactionTimes = { mine: [], theirs: [] };
+const withinRate = times => {
+	const now = Date.now();
+	while (times.length && now - times[0] >= RATE.per) times.shift();
+	if (times.length >= RATE.count) return false;
+	times.push(now);
+	return true;
+};
+const reactionListeners = new Set();
+// listener({ emoji, mine }) for every reaction shown; returns the unsubscribe
+export const onReaction = listener => {
+	reactionListeners.add(listener);
+	return () => reactionListeners.delete(listener);
+};
+export const sendReaction = emoji => {
+	const l = link;
+	if (!l?.ready || !REACTIONS.includes(emoji) || !withinRate(reactionTimes.mine)) return false;
+	try {
+		l.chat.send(JSON.stringify({ type: "reaction", emoji }));
+	} catch {
+		return false;
+	}
+	reactionListeners.forEach(listener => listener({ emoji, mine: true }));
+	return true;
 };
 
 export const sendText = text => {

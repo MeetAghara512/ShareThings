@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { MdMic, MdMicOff, MdVideocam, MdVideocamOff, MdPresentToAll, MdCallEnd, MdInfoOutline, MdLightMode, MdDarkMode, MdContentCopy, MdCheck, MdClose, MdMailOutline } from "react-icons/md";
 import { ChatButton } from "./ChatPanel";
+import { ReactionButton } from "./Reactions";
 import InviteForm from "./InviteForm";
 import { HELP, troubleText } from "../Services/devices";
 import { SHORTCUTS, keyText, ariaKeys } from "../Services/shortcuts";
@@ -66,6 +67,7 @@ const ControlBar = ({ darkMode, roomId, status, muted, cameraOff, trouble = {}, 
 					: button(cameraOff ? "Turn on camera" : "Turn off camera", onToggleCamera, cameraOff ? off : idle, cameraOff ? <MdVideocamOff /> : <MdVideocam />, false, "camera")}
 				{button(isScreen ? "Stop sharing" : "Share screen", onToggleShare, isScreen ? on : idle, <MdPresentToAll />, false, "share")}
 				<ChatButton className={round} look={idle} />
+				<ReactionButton className={round} look={idle} on={on} darkMode={darkMode} boxClass="hidden sm:block" />
 				<button type="button" onClick={onLeave} title="Leave call" aria-label="Leave call" className={`${round} w-14 sm:w-16 ${off}`}>
 					<MdCallEnd />
 				</button>
