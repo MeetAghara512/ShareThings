@@ -6,6 +6,7 @@ import InviteForm from "./InviteForm";
 import { HELP, troubleText } from "../Services/devices";
 import { CAN_SHARE_SCREEN, SHORTCUTS, keyText, ariaKeys } from "../Services/shortcuts";
 import { MODES } from "../Services/quality";
+import { pickSpeaker, useSpeaker } from "./Speaker";
 
 // Time of day, as in the corner of Google Meet
 const Clock = () => {
@@ -39,10 +40,11 @@ const QUALITY_NOTES = {
 	saver: "For mobile data: at most 360p",
 };
 
-// "More options": the video quality setting, the theme and, for the host, removing the other person
+// "More options": the video quality setting, the speaker, the theme and, for the host, removing the other person
 const MoreMenu = ({ darkMode, quality, onQuality, onToggleDarkMode, removeName, onRemove, className }) => {
 	const [open, setOpen] = useState(false);
 	const ref = useRef(null);
+	const { speakers, id: speakerId } = useSpeaker();
 
 	// A click elsewhere or Escape closes it
 	useEffect(() => {
@@ -67,7 +69,7 @@ const MoreMenu = ({ darkMode, quality, onQuality, onToggleDarkMode, removeName, 
 				<MdMoreVert />
 			</button>
 			{open && (
-				<div role="menu" aria-label="More options" className={`absolute z-50 bottom-full right-0 mb-2 w-72 py-2 rounded-xl shadow-2xl text-sm ${darkMode ? "bg-gray-800 text-gray-100" : "bg-white text-gray-900"}`}>
+				<div role="menu" aria-label="More options" className={`absolute z-50 bottom-full right-0 mb-2 w-72 max-h-[calc(100dvh-6rem)] overflow-y-auto py-2 rounded-xl shadow-2xl text-sm ${darkMode ? "bg-gray-800 text-gray-100" : "bg-white text-gray-900"}`}>
 					<p className="px-4 pb-1 text-xs font-semibold uppercase opacity-60">Video quality</p>
 					{Object.entries(MODES).map(([value, label]) => (
 						<button key={value} type="button" role="menuitemradio" aria-checked={quality === value} onClick={choose(() => onQuality(value))} className={item}>
@@ -78,6 +80,18 @@ const MoreMenu = ({ darkMode, quality, onQuality, onToggleDarkMode, removeName, 
 							</span>
 						</button>
 					))}
+					{speakers.length > 0 && (
+						<>
+							<div className={`my-2 border-t ${darkMode ? "border-gray-700" : "border-gray-200"}`} />
+							<p className="px-4 pb-1 text-xs font-semibold uppercase opacity-60">Speaker</p>
+							{speakers.map(s => (
+								<button key={s.id} type="button" role="menuitemradio" aria-checked={speakerId === s.id} onClick={choose(() => pickSpeaker(s.id))} className={`${item} items-center`}>
+									<span className={`w-3 h-3 shrink-0 rounded-full border-2 ${speakerId === s.id ? "bg-indigo-500 border-indigo-500" : "border-gray-400"}`} />
+									<span className="truncate">{s.label}</span>
+								</button>
+							))}
+						</>
+					)}
 					<div className={`my-2 border-t ${darkMode ? "border-gray-700" : "border-gray-200"}`} />
 					<button type="button" role="menuitem" onClick={choose(onToggleDarkMode)} className={`${item} items-center`}>
 						{darkMode ? <MdLightMode className="text-lg" /> : <MdDarkMode className="text-lg" />}

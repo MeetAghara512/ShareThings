@@ -12,6 +12,7 @@ import ChatPanel, { useChatOpen } from "./ChatPanel";
 import MutedWarning from "./MutedWarning";
 import { FileDropOverlay, useFileDrop } from "./FileDrop";
 import { ReactionLayer } from "./Reactions";
+import { RemoteAudio } from "./Speaker";
 import { useCallShortcuts, keyText } from "../Services/shortcuts";
 import * as chat from "../Services/chat";
 import ControlBar, { DeviceHelp, MeetingCard } from "./ControlBar";
@@ -699,7 +700,7 @@ return (
 					<div className="relative w-full h-full bg-black rounded-2xl overflow-hidden" {...fileDrop.handlers}>
 						{fileDrop.over && <FileDropOverlay name={remoteName} />}
 						{/* Their sound plays here, so swapping the videos never cuts it */}
-						{showRemote && <audio autoPlay ref={(a) => a && a.srcObject !== remoteStream && (a.srcObject = remoteStream)} />}
+						{showRemote && <RemoteAudio stream={remoteStream} />}
 						{showRemote && (
 							<video
 								autoPlay
