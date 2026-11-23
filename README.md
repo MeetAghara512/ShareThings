@@ -7,9 +7,9 @@ Audio, video, chat and files go directly between the two browsers (through an en
 
 ## Features
 
-- **Join screen like Google Meet:** camera and microphone preview, device pickers, a microphone level meter, your name, and who is already in the room. You can still join with the camera or microphone blocked or missing.
+- **Join screen like Google Meet:** camera and microphone preview, device pickers, a microphone level meter, your name, and how many people are already in the room (names appear only after you join). You can still join with the camera or microphone blocked or missing.
 - **Direct join:** no ringing. Rooms hold two people; once both are in, the call connects by itself. Rooms have codes like `abc-defg-hij`; share the link, or sign in with Google to send an email invite (with an optional meeting time).
-- **Video:** HD camera (up to 1280×720 at 30 fps), mute and camera off, call timer and connection quality, and your own camera shown like a mirror.
+- **Video:** HD camera (up to 1280×720 at 30 fps), mute and camera off, call timer and connection quality, and your own camera shown like a mirror. Quality adapts to the size of the other person's screen and to weak networks; on a very weak connection video pauses and audio continues. More options has Auto, High and Data saver.
 - **Screen and camera together:** the other person sees your screen big and your camera small, and can swap them.
 - **Chat and files** over the call's own connection. Files over 100 MB are offered first (Accept / Decline). Received files are written to the browser's storage as they arrive, checked block by block, and continue after a dropped connection or a page reload. Files can be paused, resumed and cancelled on both sides.
 - **Auto-reconnect:** after a network drop the connection restarts, and your place in the call is kept for 30 seconds.
