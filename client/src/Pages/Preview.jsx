@@ -6,6 +6,7 @@ import { DeviceHelp, TroubleMark } from "./ControlBar";
 import { useSocket, useSocketStatus } from "../useContext/SocketProvider";
 import { useAuth } from "../useContext/AuthProvider";
 import ServerStatus from "./ServerStatus";
+import NetworkCheck from "./NetworkCheck";
 
 // Devices picked and name used on this browser
 const CAMERA_KEY = "sharethings.camera";
@@ -336,6 +337,8 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 						</select>
 					</label>
 				)}
+
+				<NetworkCheck />
 
 				{without.length > 0 && (
 					<p className="text-sm text-amber-500">
