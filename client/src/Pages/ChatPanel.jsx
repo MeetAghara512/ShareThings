@@ -132,10 +132,18 @@ const ChatPanel = ({ darkMode, remoteName }) => {
 	const fileRef = useRef(null);
 	const socket = useSocket();
 
-	// A waiting clipboard item was meant for this person: the next connection may be someone else
+	// A waiting clipboard item was meant for this person: the next connection may be someone else.
+	// A clipboard read still running when the connection changes is dropped too
+	const connectionRef = useRef(0);
 	useEffect(() => {
-		if (!ready) setPending(null);
+		if (ready) return;
+		connectionRef.current++;
+		setPending(null);
 	}, [ready]);
+	const setPendingHere = () => {
+		const connection = connectionRef.current;
+		return value => connection === connectionRef.current && setPending(value);
+	};
 	useEffect(() => chat.setPeerName(remoteName), [remoteName]);
 	// Only a real departure gets a note; a reconnect also replaces the connection but the call goes on
 	useEffect(() => {
@@ -175,17 +183,21 @@ const ChatPanel = ({ darkMode, remoteName }) => {
 
 	const clipOk = ready && chat.clipReady();
 	// The clipboard is read only here, on the button's click, or from a paste into the message box
-	const handleClipboard = async () => setPending(await clipboard.readClipboard());
+	const handleClipboard = async () => {
+		const show = setPendingHere();
+		show(await clipboard.readClipboard());
+	};
 	const handlePaste = e => {
 		const image = clipOk && clipboard.fromPaste(e.clipboardData);
 		if (!image) return;
 		e.preventDefault();
-		image.then(setPending);
+		image.then(setPendingHere());
 	};
 	const sendClip = async () => {
 		const current = pending;
+		const show = setPendingHere();
 		setPending(null);
-		setPending(await clipboard.sendPending(current));
+		show(await clipboard.sendPending(current));
 	};
 
 	const muted = darkMode ? "text-gray-400" : "text-gray-500";
