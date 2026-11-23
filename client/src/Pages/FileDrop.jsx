@@ -21,6 +21,21 @@ export const useFileDrop = active => {
 		if (!active) setOver(false);
 	}, [active]);
 
+	// Anywhere else on the page, a dropped file must not open in this tab and end the call
+	useEffect(() => {
+		const stay = e => {
+			if (e.defaultPrevented || !hasFiles(e)) return;
+			e.preventDefault();
+			e.dataTransfer.dropEffect = "none";
+		};
+		window.addEventListener("dragover", stay);
+		window.addEventListener("drop", stay);
+		return () => {
+			window.removeEventListener("dragover", stay);
+			window.removeEventListener("drop", stay);
+		};
+	}, []);
+
 	const onDragOver = e => {
 		if (!active || !hasFiles(e)) return;
 		e.preventDefault(); // otherwise the browser opens the file and leaves the call
