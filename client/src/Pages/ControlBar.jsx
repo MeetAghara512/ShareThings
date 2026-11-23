@@ -34,12 +34,6 @@ export const DeviceHelp = ({ kind, trouble, darkMode, onClose, className = "" })
 	</div>
 );
 
-const QUALITY_NOTES = {
-	auto: "Sized to the other screen and your connection",
-	high: "The best picture your connection allows",
-	saver: "For mobile data: at most 360p",
-};
-
 // "More options": the video quality setting, the speaker, popping out the video, the theme and, for the host,
 // removing the other person
 const MoreMenu = ({ darkMode, quality, onQuality, onPopOut, onToggleDarkMode, removeName, onRemove, className }) => {
@@ -73,12 +67,9 @@ const MoreMenu = ({ darkMode, quality, onQuality, onPopOut, onToggleDarkMode, re
 				<div role="menu" aria-label="More options" className={`absolute z-50 bottom-full right-0 mb-2 w-72 max-h-[calc(100dvh-6rem)] overflow-y-auto py-2 rounded-xl shadow-2xl text-sm ${darkMode ? "bg-gray-800 text-gray-100" : "bg-white text-gray-900"}`}>
 					<p className="px-4 pb-1 text-xs font-semibold uppercase opacity-60">Video quality</p>
 					{Object.entries(MODES).map(([value, label]) => (
-						<button key={value} type="button" role="menuitemradio" aria-checked={quality === value} onClick={choose(() => onQuality(value))} className={item}>
-							<span className={`mt-1 w-3 h-3 shrink-0 rounded-full border-2 ${quality === value ? "bg-indigo-500 border-indigo-500" : "border-gray-400"}`} />
-							<span>
-								<span className="block font-medium">{label}</span>
-								<span className="block text-xs opacity-60">{QUALITY_NOTES[value]}</span>
-							</span>
+						<button key={value} type="button" role="menuitemradio" aria-checked={quality === value} onClick={choose(() => onQuality(value))} className={`${item} items-center`}>
+							<span className={`w-3 h-3 shrink-0 rounded-full border-2 ${quality === value ? "bg-indigo-500 border-indigo-500" : "border-gray-400"}`} />
+							<span>{label}</span>
 						</button>
 					))}
 					{speakers.length > 0 && (

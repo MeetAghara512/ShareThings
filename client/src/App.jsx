@@ -7,10 +7,15 @@ import { useState } from 'react';
 import { AuthProvider } from './useContext/AuthProvider';
 import VersionBanner from './Pages/VersionBanner';
 
-function App() {
-	const [darkMode, setDarkMode] = useState(true);
+const THEME_KEY = "sharethings.theme";
 
-	const toggleDarkMode = () => setDarkMode(prev => !prev);
+function App() {
+	const [darkMode, setDarkMode] = useState(() => localStorage.getItem(THEME_KEY) !== "light");
+
+	const toggleDarkMode = () => {
+		localStorage.setItem(THEME_KEY, darkMode ? "light" : "dark");
+		setDarkMode(!darkMode);
+	};
 
 	return (
 		<div className={`min-h-[100vh] transition-colors duration-700 ease-in-out ${darkMode

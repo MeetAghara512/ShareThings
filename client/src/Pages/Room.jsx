@@ -770,9 +770,9 @@ return (
 	<div className={`${joined ? "relative top-[var(--app-top,0px)] h-[var(--app-height,100dvh)] overflow-hidden" : "min-h-screen"} flex flex-col transition-colors duration-500 ${darkMode ? "bg-zinc-900 text-white" : "bg-gray-100 text-gray-900"}`}>
 		{!joined ? (
 			<>
-				<header className="flex justify-between items-center p-5 shadow border-b">
+				<header className={`flex justify-between items-center p-5 shadow border-b ${darkMode ? "border-white/10" : "border-gray-200"}`}>
 					<h2 className="text-2xl font-extrabold bg-gradient-to-r from-indigo-400 via-purple-500 to-pink-500 bg-clip-text text-transparent transition duration-300 hover:from-pink-500 hover:to-indigo-400">
-						Video Call Room
+						ShareThings
 					</h2>
 					<button
 						onClick={toggleDarkMode}

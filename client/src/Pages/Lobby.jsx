@@ -43,7 +43,7 @@ const Lobby = ({ darkMode, toggleDarkMode }) => {
 					: "bg-gradient-to-br from-gray-100 to-gray-200 text-gray-900")
 			}
 		>
-			<header className="flex justify-between items-center p-5 shadow border-b">
+			<header className={`flex justify-between items-center p-5 shadow border-b ${darkMode ? "border-white/10" : "border-gray-200"}`}>
 						<h2 className="text-2xl font-extrabold bg-gradient-to-r from-indigo-400 via-purple-500 to-pink-500 bg-clip-text text-transparent transition duration-300 hover:from-pink-500 hover:to-indigo-400">
 							ShareThings
 						</h2>
@@ -58,7 +58,7 @@ const Lobby = ({ darkMode, toggleDarkMode }) => {
 
 			<main className="flex-grow flex flex-col items-center justify-center px-6 py-12 sm:py-20">
 				<h2
-					className={`text-5xl font-extrabold mb-10 text-center transition-colors duration-500 ` +
+					className={`text-3xl sm:text-5xl font-extrabold mb-8 sm:mb-10 text-center transition-colors duration-500 ` +
 						(darkMode ? "text-indigo-300" : "text-indigo-600")
 					}
 				>
@@ -67,7 +67,7 @@ const Lobby = ({ darkMode, toggleDarkMode }) => {
 
 				<form
 					onSubmit={handleSubmit}
-					className={`w-full max-w-lg px-8 py-10 rounded-2xl shadow-2xl space-y-8 transition-transform duration-300 hover:scale-105 ` +
+					className={`w-full max-w-lg px-8 py-10 rounded-2xl shadow-2xl space-y-8 ` +
 						(darkMode
 							? "bg-gray-800 text-gray-100"
 							: "bg-white text-gray-900")
@@ -110,7 +110,7 @@ const Lobby = ({ darkMode, toggleDarkMode }) => {
 
 					<button
 						type="submit"
-						className="w-full py-3 rounded-lg bg-indigo-600 text-white font-semibold text-lg transition-transform duration-300 hover:bg-indigo-700 hover:-translate-y-1 hover:shadow-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+						className="w-full py-3 rounded-lg bg-indigo-600 text-white font-semibold text-lg transition-colors hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
 					>
 						{room.trim() ? "Join Room" : "Create Room"}
 					</button>
