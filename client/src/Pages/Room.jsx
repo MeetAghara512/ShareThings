@@ -248,6 +248,20 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 			// What is off right now stays closed, and its button opens it
 			const off = { ...offRef.current };
 			stream = off.video && off.audio ? new MediaStream() : await openDevices(videoId, audioId, off);
+			// A button pressed during that wait: close what is now off and open what is now on, so nothing off is ever sent
+			for (let kind; connection === peer.peer && (kind = ["audio", "video"].find(k => off[k] !== offRef.current[k]));) {
+				off[kind] = offRef.current[kind];
+				stream.getTracks().filter(t => t.kind === kind).forEach(t => {
+					t.stop();
+					stream.removeTrack(t);
+				});
+				if (off[kind]) continue;
+				try {
+					stream.addTrack(await openDevice(kind, prefsRef.current[kind === "video" ? "videoId" : "audioId"]));
+				} catch (e) {
+					setTrouble(t => ({ ...t, [kind]: troubleOf(e) }));
+				}
+			}
 			if (connection !== peer.peer) {
 				// The call ended while the camera prompt was open (e.g. browser Back): don't leave the camera on
 				stream.getTracks().forEach(t => t.stop());
@@ -257,7 +271,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 			stream.getAudioTracks().forEach(t => t.enabled = !offRef.current.audio);
 			myStreamRef.current = stream;
 			setMyStream(stream);
-			setTrouble(t => ({ ...t, ...(off.video && { video: "off" }), ...(off.audio && { audio: "off" }) }));
+			setTrouble(t => ({ ...t, video: off.video ? "off" : t.video === "off" ? null : t.video, audio: off.audio ? "off" : t.audio === "off" ? null : t.audio }));
 		}
 		if (tracksAddedRef.current !== connection) {
 			tracksAddedRef.current = connection;
@@ -630,16 +644,16 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 
 	// Toggle mic on/off
 	const handleToggleMic = () => {
-		if (!myStreamRef.current) return;
-		if (trouble.audio === "off" && !myStreamRef.current.getAudioTracks().length) return fixDevice("audio");
+		if (!myStreamRef.current) return setMuted(!muted); // between rooms: the next call opens only what is on
+		if (trouble.audio === "off" && !myStreamRef.current.getAudioTracks().length) return muted ? fixDevice("audio") : setMuted(true);
 		myStreamRef.current.getAudioTracks().forEach(track => track.enabled = muted);
 		setMuted(!muted);
 	};
 
 	// Toggle camera on/off; the shared screen is not affected
 	const handleToggleCamera = () => {
-		if (!myStreamRef.current) return;
-		if (trouble.video === "off" && !myStreamRef.current.getVideoTracks().length) return fixDevice("video");
+		if (!myStreamRef.current) return setCameraOff(!cameraOff); // between rooms: the next call opens only what is on
+		if (trouble.video === "off" && !myStreamRef.current.getVideoTracks().length) return cameraOff ? fixDevice("video") : setCameraOff(true);
 		myStreamRef.current.getVideoTracks().forEach(track => track.enabled = cameraOff);
 		setCameraOff(!cameraOff);
 	};
@@ -868,7 +882,7 @@ return (
 							{offline && (
 								<div role="alert" className="max-w-full px-4 py-2 rounded-2xl bg-amber-500 text-black text-sm font-semibold shadow flex flex-wrap items-center justify-center gap-x-3 gap-y-1 pointer-events-auto">
 									You're offline
-									{(hasCamera || hasMic) && <button type="button" onClick={turnOffDevices} className="underline">Turn off camera and mic</button>}
+									{myStream?.getTracks().some(t => t.readyState === "live") && <button type="button" onClick={turnOffDevices} className="underline">Turn off camera and mic</button>}
 								</div>
 							)}
 							{!wide && joinRequests}
