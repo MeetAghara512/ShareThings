@@ -56,9 +56,9 @@ const VersionBanner = () => {
 		);
 	}
 	return (
-		<p role="status" className="px-4 py-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-sm font-medium bg-indigo-600 text-white">
+		<p role="status" className="px-4 py-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-sm font-medium bg-accent text-on-accent">
 			{calling ? "A new version of ShareThings is available. Reload after your call, so it is not cut off" : "A new version of ShareThings is available —"}
-			<button type="button" onClick={() => window.location.reload()} className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white text-indigo-700 font-semibold hover:bg-indigo-50">
+			<button type="button" onClick={() => window.location.reload()} className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-on-accent text-accent font-semibold hover:opacity-90">
 				<FaRedo className="text-xs" /> {calling ? "Reload now" : "Reload"}
 			</button>
 		</p>

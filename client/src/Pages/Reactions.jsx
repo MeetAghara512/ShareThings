@@ -7,7 +7,7 @@ const SHOW_FOR = 3000;
 // The reaction button (in the bar; on phones, where the bar is full, in the chat box): a row of emoji above it,
 // sent over the chat channel, so only once chat is ready. Picking one closes it, as does a click elsewhere
 // or Escape. end: the row lines up with the button's right edge instead of its middle
-export const ReactionButton = ({ className, look, on, darkMode, boxClass = "", end = false }) => {
+export const ReactionButton = ({ className, look, on, boxClass = "", end = false }) => {
 	const ready = useSyncExternalStore(chat.subscribe, () => chat.getState().ready);
 	const [open, setOpen] = useState(false);
 	const box = useRef(null);
@@ -43,8 +43,7 @@ export const ReactionButton = ({ className, look, on, darkMode, boxClass = "", e
 				<div
 					role="group"
 					aria-label="Reactions"
-					className={`absolute z-50 bottom-full mb-2 ${end ? "right-0" : "left-1/2 -translate-x-1/2"} flex gap-0.5 p-1 rounded-full shadow-xl border ` +
-						(darkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200")}
+					className={`absolute z-50 bottom-full mb-3 ${end ? "right-0" : "left-1/2 -translate-x-1/2"} flex gap-0.5 p-1.5 rounded-2xl shadow-xl border bg-surface border-line`}
 				>
 					{chat.REACTIONS.map(emoji => (
 						<button
@@ -55,7 +54,7 @@ export const ReactionButton = ({ className, look, on, darkMode, boxClass = "", e
 								setOpen(false);
 							}}
 							aria-label={`React with ${emoji}`}
-							className={`w-9 h-9 rounded-full text-xl leading-none transition-colors active:scale-90 ${darkMode ? "hover:bg-gray-700" : "hover:bg-gray-100"}`}
+							className={`w-9 h-9 rounded-full text-xl leading-none transition-colors active:scale-90 hover:bg-raised`}
 						>
 							{emoji}
 						</button>
