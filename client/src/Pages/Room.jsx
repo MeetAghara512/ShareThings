@@ -501,10 +501,13 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		});
 	}, [myStream]);
 
-	// Allowed in the address bar during the call: the device starts by itself
+	// Allowed in the address bar during the call: the device starts by itself, unless it was turned off on
+	// purpose. Then it is not opened at all (that would light the camera); its red button still opens it
+	const offRef = useRef({});
+	offRef.current = { audio: muted, video: cameraOff };
 	useEffect(() => {
 		if (!joined) return;
-		const stops = ["audio", "video"].map(kind => onGranted(kind, () => troubleRef.current[kind] && fixDevice(kind)));
+		const stops = ["audio", "video"].map(kind => onGranted(kind, () => troubleRef.current[kind] && !offRef.current[kind] && fixDevice(kind)));
 		return () => stops.forEach(stop => stop());
 	}, [joined, fixDevice]);
 

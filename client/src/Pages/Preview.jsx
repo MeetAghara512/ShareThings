@@ -31,6 +31,7 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 	const [help, setHelp] = useState(null); // the device whose fix is shown
 	const [loading, setLoading] = useState(true);
 	const [slow, setSlow] = useState(false); // still waiting for the permission prompt
+	const [attempt, setAttempt] = useState(0); // each camera request (also Retry) gets its own wait
 	const [devices, setDevices] = useState({ video: [], audio: [] });
 	const [videoId, setVideoId] = useState(() => localStorage.getItem(CAMERA_KEY) || "");
 	const [audioId, setAudioId] = useState(() => localStorage.getItem(MIC_KEY) || "");
@@ -64,6 +65,7 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 		setTrouble({});
 		setHelp(null);
 		setLoading(true);
+		setAttempt(a => a + 1);
 		// Mic and camera each on their own terms: a blocked camera does not stop the mic (an insecure page has neither)
 		const { stream: s, trouble } = navigator.mediaDevices ? await openEach(video, audio) : { stream: new MediaStream(), trouble: { audio: "blocked", video: "blocked" } };
 		// Switched device, retried or left the page meanwhile: drop this one
@@ -125,7 +127,7 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 		if (!loading) return;
 		const id = setTimeout(() => setSlow(true), 10000);
 		return () => clearTimeout(id);
-	}, [loading]);
+	}, [loading, attempt]);
 
 	useEffect(() => {
 		stream?.getVideoTracks().forEach(t => t.enabled = !cameraOff);
@@ -190,25 +192,29 @@ const Preview = ({ darkMode, roomId, onJoin }) => {
 	const displayName = name.trim();
 	// Joins with whatever works, even nothing: then you watch and listen
 	const canJoin = displayName && !peek?.full;
+	// Real cameras take 1-3 s to open. A permission prompt left unanswered (slow) does not hold the join
+	const opening = loading && !slow;
 	// A server from before this change still sends names: then only their number is used
 	const here = peek && whoIsHere(peek.count ?? peek.names?.length ?? 0);
 	const without = ["video", "audio"].filter(kind => trouble[kind]);
 
 	const handleJoin = e => {
 		e?.preventDefault();
-		if (!canJoin) return;
-		// The server may still be waking up: join as soon as it answers (the button says Joining…)
-		if (status !== "connected") return setJoining(true);
+		if (!canJoin) return setJoining(false);
+		// The server may still be waking up, or the camera still opening: join once both are ready (the button says Joining…)
+		if (status !== "connected" || opening) return setJoining(true);
 		localStorage.setItem(CAMERA_KEY, videoId);
 		localStorage.setItem(MIC_KEY, audioId);
 		localStorage.setItem(NAME_KEY, displayName);
 		handedOverRef.current = true;
-		onJoin(streamRef.current ?? new MediaStream(), { videoId, audioId, cameraOff, muted, name: displayName, trouble });
+		// Prompt still unanswered: "blocked", so the call's buttons can ask again, not "no camera found"
+		const joinTrouble = loading ? { audio: "blocked", video: "blocked" } : trouble;
+		onJoin(streamRef.current ?? new MediaStream(), { videoId, audioId, cameraOff, muted, name: displayName, trouble: joinTrouble });
 	};
 
 	useEffect(() => {
-		if (joining && status === "connected") handleJoin();
-	}, [joining, status]);
+		if (joining && status === "connected" && !opening) handleJoin();
+	}, [joining, status, opening]);
 
 	// Round on/off buttons on the preview, red when off (like Google Meet)
 	const toggleClass = off => `w-12 h-12 rounded-full flex items-center justify-center text-white shadow-md transition-colors ` +
