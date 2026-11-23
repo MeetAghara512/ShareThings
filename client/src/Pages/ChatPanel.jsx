@@ -1,11 +1,13 @@
 import React, { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { FaDownload, FaFileAlt, FaPaperPlane, FaPaperclip, FaTimes } from "react-icons/fa";
-import { MdChatBubbleOutline } from "react-icons/md";
+import { MdChatBubbleOutline, MdContentPaste } from "react-icons/md";
 import * as chat from "../Services/chat";
 import * as files from "../Services/files";
 import { useSocket } from "../useContext/SocketProvider";
 import { keyText, ariaKeys } from "../Services/shortcuts";
 import { ReactionButton } from "./Reactions";
+import { ClipBubble, ClipTray } from "./SharedClip";
+import * as clipboard from "../Services/clipboard";
 import { setUnreadTitle } from "../Services/title";
 
 const useChat = () => useSyncExternalStore(chat.subscribe, chat.getState);
@@ -125,10 +127,23 @@ const FileItem = ({ item, remoteName, ready }) => {
 const ChatPanel = ({ darkMode, remoteName }) => {
 	const { ready, filesOk, open, items } = useChat();
 	const [text, setText] = useState("");
+	const [pending, setPending] = useState(null); // from the clipboard, waiting for Send
 	const listRef = useRef(null);
 	const fileRef = useRef(null);
 	const socket = useSocket();
 
+	// A waiting clipboard item was meant for this person: the next connection may be someone else.
+	// A clipboard read still running when the connection changes is dropped too
+	const connectionRef = useRef(0);
+	useEffect(() => {
+		if (ready) return;
+		connectionRef.current++;
+		setPending(null);
+	}, [ready]);
+	const setPendingHere = () => {
+		const connection = connectionRef.current;
+		return value => connection === connectionRef.current && setPending(value);
+	};
 	useEffect(() => chat.setPeerName(remoteName), [remoteName]);
 	// Only a real departure gets a note; a reconnect also replaces the connection but the call goes on
 	useEffect(() => {
@@ -164,6 +179,25 @@ const ChatPanel = ({ darkMode, remoteName }) => {
 	const handleDrop = e => {
 		e.preventDefault();
 		if (filesOk) files.sendFiles([...e.dataTransfer.files]);
+	};
+
+	const clipOk = ready && chat.clipReady();
+	// The clipboard is read only here, on the button's click, or from a paste into the message box
+	const handleClipboard = async () => {
+		const show = setPendingHere();
+		show(await clipboard.readClipboard());
+	};
+	const handlePaste = e => {
+		const image = clipOk && clipboard.fromPaste(e.clipboardData);
+		if (!image) return;
+		e.preventDefault();
+		image.then(setPendingHere());
+	};
+	const sendClip = async () => {
+		const current = pending;
+		const show = setPendingHere();
+		setPending(null);
+		show(await clipboard.sendPending(current));
 	};
 
 	const muted = darkMode ? "text-gray-400" : "text-gray-500";
@@ -203,7 +237,7 @@ const ChatPanel = ({ darkMode, remoteName }) => {
 						<div className={`max-w-[85%] px-3 py-2 rounded-2xl whitespace-pre-wrap [overflow-wrap:anywhere] ` +
 							(item.mine ? "bg-indigo-600 text-white" : darkMode ? "bg-gray-700" : "bg-gray-100")}
 						>
-							{item.kind === "text" ? item.text : <FileItem item={item} remoteName={remoteName} ready={ready} />}
+							{item.kind === "text" ? item.text : item.kind === "clip" ? <ClipBubble item={item} /> : <FileItem item={item} remoteName={remoteName} ready={ready} />}
 						</div>
 					</div>
 				))}
@@ -212,7 +246,8 @@ const ChatPanel = ({ darkMode, remoteName }) => {
 			<form onSubmit={handleSubmit} className={`p-3 space-y-2 border-t ${darkMode ? "border-gray-700" : "border-gray-200"}`}>
 				{!ready && <p className={`text-xs ${muted}`}>Chat starts when the other person is connected.</p>}
 				{ready && !filesOk && <p className={`text-xs ${muted}`}>Ask them to reload the page to send files.</p>}
-				<div className="flex items-center gap-2">
+				{pending && <ClipTray pending={pending} canSend={clipOk} darkMode={darkMode} onSend={sendClip} onClose={() => setPending(null)} />}
+				<div className="flex items-center gap-1 sm:gap-2">
 					<button
 						type="button"
 						onClick={() => fileRef.current?.click()}
@@ -224,11 +259,22 @@ const ChatPanel = ({ darkMode, remoteName }) => {
 						<FaPaperclip />
 					</button>
 					<input ref={fileRef} type="file" multiple hidden onChange={handlePick} />
+					<button
+						type="button"
+						onClick={handleClipboard}
+						disabled={!clipOk}
+						aria-label="Share from clipboard"
+						title="Share from clipboard"
+						className={`${iconButton} text-lg ${darkMode ? "hover:bg-gray-700" : "hover:bg-gray-100"}`}
+					>
+						<MdContentPaste />
+					</button>
 					<input
 						type="text"
 						value={text}
 						onChange={e => setText(e.target.value)}
 						onKeyDown={e => e.key === "Escape" && chat.setOpen(false)}
+						onPaste={handlePaste}
 						disabled={!ready}
 						maxLength={chat.MAX_TEXT}
 						placeholder="Type a message"
