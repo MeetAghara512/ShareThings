@@ -5,11 +5,12 @@ import recovery from "../Services/recovery";
 import clientId, { renewClientId } from "../Services/clientId";
 import { openDevices, openDevice, onGranted, permission, troubleOf } from "../Services/devices";
 import { useSocket } from "../useContext/SocketProvider";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import CallStatus from "./CallStatus";
 import Preview from "./Preview";
 import ChatPanel, { useChatOpen } from "./ChatPanel";
 import MutedWarning from "./MutedWarning";
+import { FileDropOverlay, useFileDrop } from "./FileDrop";
 import { ReactionLayer } from "./Reactions";
 import { useCallShortcuts, keyText } from "../Services/shortcuts";
 import * as chat from "../Services/chat";
@@ -19,6 +20,8 @@ import { setCallTitle } from "../Services/title";
 import { noticeJoin } from "../Services/notify";
 import JoinNotice from "./JoinNotice";
 import JoinRequests from "./JoinRequests";
+import PrivacyShield from "./PrivacyShield";
+import { privateHash, setPrivateRoom } from "../Services/privateCheck";
 
 // What the other side last told us about their camera, mic and shared screen (has*: there is a device at all)
 const MEDIA_ON = { video: true, audio: true, screen: false, hasCamera: true, hasMic: true, paused: false };
@@ -29,6 +32,7 @@ const CONNECTION_LOST = "Connection lost. Reload the page to try again.";
 
 const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	const { roomId } = useParams();
+	const { hash: linkHash } = useLocation(); // the private-link secret: stays in this browser, never sent to the server
 	const navigate = useNavigate();
 	const socket = useSocket();
 
@@ -86,7 +90,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 	const handleCutCall = () => {
 		if (myStreamRef.current) myStreamRef.current.getTracks().forEach(t => t.stop());
 		socket.disconnect();
-		window.location.href = `/left/${encodeURIComponent(roomId)}`; // "You left the call", with Rejoin
+		window.location.href = `/left/${encodeURIComponent(roomId)}${privateHash()}`; // "You left the call", with Rejoin
 	};
 
 	const handleCopyLink = async () => {
@@ -428,7 +432,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		const handleReplaced = reason => {
 			if (reason !== "io server disconnect") return;
 			renewClientId();
-			navigate(`/left/${encodeURIComponent(roomId)}`, { state: { reason: "other-tab" } });
+			navigate(`/left/${encodeURIComponent(roomId)}${privateHash()}`, { state: { reason: "other-tab" } });
 			socket.connect();
 		};
 		socket.on("disconnect", handleReplaced);
@@ -602,6 +606,7 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 
 	// While ringing the offer is already applied, but the caller is not shown until we accept
 	const showRemote = remoteStream && callState === "active";
+	const fileDrop = useFileDrop(!!showRemote);
 	// Their shared screen is big and their camera small, until they click the small tile to swap
 	const remoteSharing = showRemote && remoteMedia.screen && remoteScreen;
 	const bigStream = remoteSharing && !swapped ? remoteScreen : remoteStream;
@@ -633,7 +638,13 @@ const RoomPage = ({ darkMode, toggleDarkMode }) => {
 		query.addEventListener("change", update);
 		return () => query.removeEventListener("change", update);
 	}, []);
-	const status = callStart && <CallStatus connection={peer.peer} since={callStart} reconnecting={reconnecting} onStats={onStats} />;
+	const status = callStart && (
+		<div className="flex items-center gap-3 min-w-0">
+			<PrivacyShield remoteName={remoteName} darkMode={darkMode} />
+			<CallStatus connection={peer.peer} since={callStart} reconnecting={reconnecting} onStats={onStats} />
+		</div>
+	);
+	useEffect(() => setPrivateRoom(roomId, linkHash), [roomId, linkHash]);
 
 	// iPhone Safari lays the keyboard over the page and leaves dvh as it was (it ignores interactive-widget), so
 	// the chat input and the video would end up under the keyboard or panned away. While the visible part of the
@@ -685,7 +696,8 @@ return (
 				{/* The stage fills the screen above the control bar: the page itself never scrolls. Below lg (phones,
 				    tablets) with the chat open it keeps the top 40% (the chat sits under it, see ChatPanel); dvh follows the keyboard */}
 				<main className={`flex-1 min-h-0 px-2 pt-2 sm:px-4 sm:pt-4 ${chatOpen ? "lg:pr-[26rem] max-lg:order-first max-lg:flex-none max-lg:h-[calc(var(--app-height,100dvh)*0.4)] max-lg:min-h-[160px]" : ""}`}>
-					<div className="relative w-full h-full bg-black rounded-2xl overflow-hidden">
+					<div className="relative w-full h-full bg-black rounded-2xl overflow-hidden" {...fileDrop.handlers}>
+						{fileDrop.over && <FileDropOverlay name={remoteName} />}
 						{/* Their sound plays here, so swapping the videos never cuts it */}
 						{showRemote && <audio autoPlay ref={(a) => a && a.srcObject !== remoteStream && (a.srcObject = remoteStream)} />}
 						{showRemote && (

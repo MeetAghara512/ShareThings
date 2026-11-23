@@ -69,6 +69,12 @@ export const registerFiles = hooks => {
 	files = hooks;
 };
 
+// privateCheck.jsx: up(link) once both sides said hello, down(link), message(link, msg)
+let proof = {};
+export const registerProof = hooks => {
+	proof = hooks;
+};
+
 // The current connection's channels. A new connection (peer.reset) ends the old one
 let link = null;
 let lastPeer = null; // who the last connection was with, until they really leave
@@ -79,7 +85,7 @@ const attach = (chat, fileChannel) => {
 	fileChannel.binaryType = "arraybuffer";
 	// Chat turns on when the other side's hello arrives, so a browser on an older build without chat
 	// is never sent messages that go nowhere
-	chat.onopen = () => sendJson(chat, { type: "hello", v: 2, me });
+	chat.onopen = () => sendJson(chat, { type: "hello", v: 2, me, clip: 1 });
 	chat.onmessage = e => l === link && onChat(l, e.data);
 	fileChannel.onmessage = e => l === link && (l.ready ? files.message?.(l, e.data) : l.early.length < EARLY_MAX && l.early.push(e.data));
 	chat.onclose = fileChannel.onclose = () => l === link && endLink();
@@ -92,6 +98,7 @@ const endLink = () => {
 	link = null;
 	if (!l) return;
 	files.down?.(l);
+	proof.down?.(l);
 	set({ ready: false, filesOk: false });
 };
 
@@ -124,15 +131,21 @@ const onChat = (l, data) => {
 		l.ready = true;
 		l.peer = lastPeer = typeof msg.me === "string" ? msg.me.slice(0, 64) : null;
 		l.version = msg.v;
+		l.clip = msg.clip === 1; // an older build ignores shared clipboard messages
 		// Files need the same version on both sides; chat works with any
 		set({ ready: true, filesOk: msg.v === 2 });
 		files.up?.(l);
 		l.early.splice(0).forEach(early => files.message?.(l, early));
+		proof.up?.(l);
+	} else if (msg?.type === "proof" && l.ready) {
+		proof.message?.(l, msg);
 	} else if (msg?.type === "chat" && l.ready && typeof msg.text === "string" && msg.text.trim() && msg.text.length <= MAX_TEXT) {
 		add({ kind: "text", mine: false, name: peerName, text: msg.text });
 		bump();
 	} else if (msg?.type === "reaction" && l.ready && REACTIONS.includes(msg.emoji) && withinRate(reactionTimes.theirs)) {
 		reactionListeners.forEach(listener => listener({ emoji: msg.emoji, mine: false }));
+	} else if (msg?.type === "clip" && l.ready && l.clip) {
+		clip.message?.(l, msg);
 	}
 };
 
@@ -178,3 +191,11 @@ export const sendText = text => {
 	add({ kind: "text", mine: true, text });
 	return true;
 };
+
+// clipboard.jsx: message(link, msg). The open link, and whether the other side can receive shared clips
+let clip = {};
+export const registerClip = hooks => {
+	clip = hooks;
+};
+export const chatLink = () => (link?.ready ? link : null);
+export const clipReady = () => !!link?.ready && link.clip === true;
