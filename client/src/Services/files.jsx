@@ -676,6 +676,10 @@ registerFiles({
 		const msg = parse(data);
 		if (typeof msg?.id === "string" && msg.id.length <= 64) HANDLERS[msg.type]?.(msg);
 	},
+	// Removed from the call: what was still going to them ends here, even if the same tab comes back
+	forget(id) {
+		outgoing.filter(t => t.peer === id).forEach(t => end(t, "cancelled"));
+	},
 	// Leaving the room: stop everything; unfinished files in private storage stay for a later visit
 	clear() {
 		outgoing.forEach(halt);

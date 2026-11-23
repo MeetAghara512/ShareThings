@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { MdMic, MdMicOff, MdVideocam, MdVideocamOff, MdPresentToAll, MdCallEnd, MdInfoOutline, MdLightMode, MdDarkMode, MdContentCopy, MdCheck, MdClose, MdMailOutline, MdMoreVert } from "react-icons/md";
+import { MdMic, MdMicOff, MdVideocam, MdVideocamOff, MdPresentToAll, MdCallEnd, MdInfoOutline, MdLightMode, MdDarkMode, MdContentCopy, MdCheck, MdClose, MdMailOutline, MdMoreVert, MdPersonRemove } from "react-icons/md";
 import { ChatButton } from "./ChatPanel";
 import { ReactionButton } from "./Reactions";
 import InviteForm from "./InviteForm";
@@ -39,8 +39,8 @@ const QUALITY_NOTES = {
 	saver: "For mobile data: at most 360p",
 };
 
-// "More options": the video quality setting and the theme, in a small menu above the bar
-const MoreMenu = ({ darkMode, quality, onQuality, onToggleDarkMode, className }) => {
+// "More options": the video quality setting, the theme and, for the host, removing the other person
+const MoreMenu = ({ darkMode, quality, onQuality, onToggleDarkMode, removeName, onRemove, className }) => {
 	const [open, setOpen] = useState(false);
 	const ref = useRef(null);
 
@@ -83,6 +83,12 @@ const MoreMenu = ({ darkMode, quality, onQuality, onToggleDarkMode, className })
 						{darkMode ? <MdLightMode className="text-lg" /> : <MdDarkMode className="text-lg" />}
 						{darkMode ? "Switch to light mode" : "Switch to dark mode"}
 					</button>
+					{removeName && (
+						<button type="button" role="menuitem" onClick={choose(onRemove)} className={`${item} items-center text-red-500`}>
+							<MdPersonRemove className="text-lg shrink-0" />
+							<span className="truncate">Remove {removeName}</span>
+						</button>
+					)}
 				</div>
 			)}
 		</div>
@@ -95,7 +101,7 @@ const CAN_SHARE_SCREEN = !!navigator.mediaDevices?.getDisplayMedia;
 // The call's one row of controls, like Google Meet: time, room and call status on the left, round
 // icon buttons in the middle, meeting details and more options (video quality, theme) on the right.
 // trouble: a mic or camera that is blocked or missing; its button is red with a "!" and its click tries to fix it
-const ControlBar = ({ darkMode, roomId, status, muted, cameraOff, trouble = {}, isScreen, infoOpen, quality, onQuality, onToggleMic, onToggleCamera, onToggleShare, onToggleInfo, onToggleDarkMode, onLeave }) => {
+const ControlBar = ({ darkMode, roomId, status, muted, cameraOff, trouble = {}, isScreen, infoOpen, quality, onQuality, onToggleMic, onToggleCamera, onToggleShare, onToggleInfo, onToggleDarkMode, removeName, onRemove, onLeave }) => {
 	const round = "w-10 h-10 sm:w-12 sm:h-12 shrink-0 rounded-full flex items-center justify-center text-xl transition-colors";
 	const idle = darkMode ? "bg-gray-700 hover:bg-gray-600 text-white" : "bg-gray-200 hover:bg-gray-300 text-gray-800";
 	const off = "bg-red-600 hover:bg-red-700 text-white";
@@ -135,7 +141,7 @@ const ControlBar = ({ darkMode, roomId, status, muted, cameraOff, trouble = {}, 
 
 			<div className="flex items-center justify-end gap-1 sm:gap-2">
 				{button("Meeting details", onToggleInfo, infoOpen ? on : plain, <MdInfoOutline />)}
-				<MoreMenu darkMode={darkMode} quality={quality} onQuality={onQuality} onToggleDarkMode={onToggleDarkMode} className={`${round} ${plain}`} />
+				<MoreMenu darkMode={darkMode} quality={quality} onQuality={onQuality} onToggleDarkMode={onToggleDarkMode} removeName={removeName} onRemove={onRemove} className={`${round} ${plain}`} />
 			</div>
 		</footer>
 	);
