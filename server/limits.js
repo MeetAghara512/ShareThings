@@ -1,7 +1,9 @@
 // Limits per internet address, so one address cannot flood the free server with connections, joins or
-// "who is here" checks. Counts live in memory over a sliding window and reset when the server restarts.
+// "who is here" checks. Counts are kept over a sliding window in the store (see store.js): in this process's memory,
+// or in Redis when REDIS_URL is set.
 
 const { isIP } = require("net");
+const { getStore } = require("./store");
 
 const WINDOW_MS = Number(process.env.LIMIT_WINDOW_MS) || 60 * 1000; // a shorter window can be set for tests
 const MAX_CONNECTIONS = 30; // new socket connections per address
@@ -42,63 +44,38 @@ function isLocal(socket) {
   return !edgeIp && !forwardedFor && ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(socket.handshake.address);
 }
 
-// Each map: key (address or socket id) -> times of its recent requests
-const counts = { connections: new Map(), joins: new Map(), peeks: new Map(), socketPeeks: new Map(), socketStats: new Map() };
-
-// The key's requests still inside the window (stored back, so the caller can add the new one)
-function recent(map, key, now) {
-  const times = (map.get(key) || []).filter(t => now - t < WINDOW_MS);
-  map.set(key, times);
-  return times;
-}
+// One counter: what is counted (connections, joins...), for whom (an address or a socket id), and how many fit the window
+const limit = (name, id, max) => ({ key: `limit:${name}:${id}`, max, windowMs: WINDOW_MS });
 
 // Counts the request and says yes, or says no without counting it
-function allow(map, key, max) {
-  const now = Date.now();
-  const times = recent(map, key, now);
-  if (times.length >= max) return false;
-  times.push(now);
-  return true;
-}
-
-// Keys that are never used again would otherwise stay in memory forever
-setInterval(() => {
-  const now = Date.now();
-  for (const map of Object.values(counts)) {
-    for (const key of map.keys()) if (!recent(map, key, now).length) map.delete(key);
-  }
-}, WINDOW_MS).unref();
+const allow = async (name, id, max) => (await getStore().take([limit(name, id, max)])).ok;
 
 // Socket.IO middleware: refuses a new connection over the limit
-function limitConnections(socket, next) {
-  if (isLocal(socket) || allow(counts.connections, clientAddress(socket), MAX_CONNECTIONS)) return next();
+async function limitConnections(socket, next) {
+  if (isLocal(socket) || await allow("connections", clientAddress(socket), MAX_CONNECTIONS)) return next();
   next(new Error("Too many connections, wait a minute"));
 }
 
 // True (after answering) when this room:join is over the limit
-function joinLimited(socket, ack) {
-  if (isLocal(socket) || allow(counts.joins, clientAddress(socket), MAX_JOINS)) return false;
+async function joinLimited(socket, ack) {
+  if (isLocal(socket) || await allow("joins", clientAddress(socket), MAX_JOINS)) return false;
   if (typeof ack === "function") ack({ full: true, error: TOO_MANY });
   return true;
 }
 
-// True (after answering) when this room:peek is over the socket's or the address's limit
-function peekLimited(socket, ack) {
+// True (after answering) when this room:peek is over the socket's or the address's limit. It is counted on both only
+// when both are under, as one step
+async function peekLimited(socket, ack) {
   if (isLocal(socket)) return false;
-  const now = Date.now();
-  const mine = recent(counts.socketPeeks, socket.id, now), address = recent(counts.peeks, clientAddress(socket), now);
-  if (mine.length < MAX_PEEKS_PER_SOCKET && address.length < MAX_PEEKS) {
-    mine.push(now);
-    address.push(now);
-    return false;
-  }
+  const counted = await getStore().take([limit("socketPeeks", socket.id, MAX_PEEKS_PER_SOCKET), limit("peeks", clientAddress(socket), MAX_PEEKS)]);
+  if (counted.ok) return false;
   if (typeof ack === "function") ack({ limited: true });
   return true;
 }
 
 // True when this stats:get is over the socket's limit. It is then answered { limited: true }, so the join screen's
 // network check says to try again later instead of calling a good connection weak
-const statsLimited = socket => !isLocal(socket) && !allow(counts.socketStats, socket.id, MAX_STATS_PER_SOCKET);
+const statsLimited = async socket => !isLocal(socket) && !(await allow("socketStats", socket.id, MAX_STATS_PER_SOCKET));
 
 // True when this address already has max of the sockets waiting to be let in to one room
 const waitingLimited = (socket, waiting, max) => !isLocal(socket) && waiting.filter(s => clientAddress(s) === clientAddress(socket)).length >= max;

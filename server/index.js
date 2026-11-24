@@ -8,13 +8,16 @@ const { OAuth2Client } = require("google-auth-library");
 const { sendInvite } = require("./invite");
 const { getIceServers } = require("./turn");
 const { limitConnections, joinLimited, peekLimited, statsLimited, waitingLimited } = require("./limits");
+const { getStore } = require("./store");
 const liveStats = require("./stats");
 
 const app = express();
 const server = http.createServer(app);
 
-// Answers at once; the page calls it on load so a sleeping free server starts waking up straight away
-app.get("/health", (req, res) => res.type("text").send("ok"));
+// Answers at once; the page calls it on load so a sleeping free server starts waking up straight away. While a
+// configured Redis cannot be reached it still answers 200, since calls keep working and only limits are skipped:
+// a failing health check would make the host restart the server and cut the calls in progress
+app.get("/health", (req, res) => res.type("text").send(getStore().ready() ? "ok" : "ok, redis down: limits not enforced"));
 
 // Sites allowed to connect; invite emails only ever link to one of these
 const ALLOWED_ORIGINS = [
@@ -273,6 +276,7 @@ async function enterRoom(room, socket, tab, name, resume, ack) {
 }
 
 io.on("connection", socket => {
+  let joinCheck = null; // the join limit check still waiting for its answer, if any (see room:join)
   socket.emit("app:version", { version: PROTOCOL_VERSION });
   socket.emit("stats:update", stats.current());
 
@@ -293,7 +297,14 @@ io.on("connection", socket => {
   // clientId: random per browser tab, so the tab gets its seat back after a dropped connection.
   // resume: the tab still has its call running and wants to keep it
   socket.on("room:join", async ({ room, name, clientId, resume }, ack) => {
-    if (!ownsSeat(room, validClientId(clientId)) && joinLimited(socket, ack)) return;
+    if (!ownsSeat(room, validClientId(clientId))) {
+      // The count can wait on Redis. A room:leave sent after this join waits for it too, so it is never handled first,
+      // and a connection that closed meanwhile does not join
+      const check = (joinCheck = joinLimited(socket, ack));
+      const limited = await check;
+      if (joinCheck === check) joinCheck = null;
+      if (limited || socket.disconnected) return;
+    }
     if (typeof ack !== "function") return;
     if (!room) return ack({ full: true, error: INVALID_ROOM });
     const key = validClientId(clientId) ?? `socket:${socket.id}`;
@@ -350,8 +361,8 @@ io.on("connection", socket => {
 
   // How many people are in a room, for the join screen. Does not join it.
   // A seat kept for this tab itself (its connection dropped, then it reloaded) is not counted
-  socket.on("room:peek", ({ room, clientId }, ack) => {
-    if (peekLimited(socket, ack)) return;
+  socket.on("room:peek", async ({ room, clientId }, ack) => {
+    if (await peekLimited(socket, ack)) return;
     if (typeof ack !== "function") return;
     // Only how many: anyone with the room code can ask, so never who (names are shown once you are in the call)
     const count = othersInRoom(room, socket, validClientId(clientId)).length;
@@ -360,11 +371,12 @@ io.on("connection", socket => {
   });
 
   // The first page asks when it opens, since it may open after the numbers were sent
-  socket.on("stats:get", (data, ack) => typeof ack === "function" && ack(statsLimited(socket) ? { limited: true } : stats.current()));
+  socket.on("stats:get", async (data, ack) => typeof ack === "function" && ack((await statsLimited(socket)) ? { limited: true } : stats.current()));
 
   // closing: the tab is closing or reloading, so it may be back in a moment. A guest keeps their seat for SEAT_GRACE,
   // so a reload does not have to ask the host again; the host can still remove them meanwhile
-  socket.on("room:leave", ({ room, closing }) => {
+  socket.on("room:leave", async ({ room, closing }) => {
+    if (joinCheck) await joinCheck; // a join sent before this leave is handled first
     if (socket.data.request?.room === room) dropRequest(socket);
     if (room === socket.id || !socket.rooms.has(room)) return;
     const guestMayReturn = closing === true && hosts.get(room)?.key !== socket.data.clientId && holdSeat(room, socket, "closing");
