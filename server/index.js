@@ -252,7 +252,7 @@ function askHost(room, name, socket, tab, typed, resume, ack, effect) {
   room.waiting.push({ id, key, tab, name: typed, resume, address: clientAddress(socket), socket: socket.id, copy: COPY });
   effect(() => {
     socket.data.request = { room: name, id };
-    pending.set(id, { socket, ack, name: typed, tab });
+    pending.set(id, { socket, ack, name: typed, tab, room: name });
     socket.emit("room:waiting", { room: codeOf(name) });
   });
   sendRequests(room, name, effect);
@@ -409,11 +409,14 @@ if (store.shared) {
   }, 10000).unref();
 }
 
-// Back in touch with Redis. A copy that could not reach it for a while may have been taken for stopped, its people
-// turned into kept seats: they never left, so they get their places back before those seats end. If Redis lost its
-// data, this copy puts back everyone it still has (except tabs the room now keeps out), with the host it last knew,
-// and people waiting here are told to ask again, since no host has their request any more
+// Back in touch with Redis, or found swept. A copy that could not reach it for a while, or stalled, may have been taken
+// for stopped, its people turned into kept seats and its waiting people's requests dropped. Its people never left, so
+// they get their places back before those seats end. If Redis lost its data, this copy puts back everyone it still has
+// (except tabs the room now keeps out), with the host it last knew. People waiting here whose request the room no
+// longer has are told to ask again, since no host will answer it. Throws if a room could not be read or changed, so
+// the store tries again
 store.onReconnect(async lost => {
+  let failed = null;
   for (const socket of io.sockets.sockets.values()) {
     for (const name of socket.rooms) {
       if (!name.startsWith(ROOM_PREFIX)) continue;
@@ -424,10 +427,15 @@ store.onReconnect(async lost => {
         else if (!lost || room.removed.includes(key) || room.denied.includes(key)) return;
         room.members[socket.id] = { clientId: tab, name: socket.data.name, seat: socket.data.seat, copy: COPY, at: Date.now() };
         if (!room.host) room.host = { key: knownHosts.get(name) ?? key, awayUntil: 0 };
-      }).catch(err => console.error("Room update failed:", err.message));
+      }).catch(err => (failed = err));
     }
   }
-  if (lost) for (const [id, waiting] of pending) answer({ id, copy: COPY }, { retry: true });
+  for (const [id, waiting] of pending) {
+    const room = await store.readRoom(waiting.room).catch(err => void (failed = err));
+    // Not in the list and not seated (a seat means an admission is on its way here)
+    if (room && !room.waiting.some(request => request.id === id) && !Object.hasOwn(room.members, waiting.socket.id)) answer({ id, copy: COPY }, { retry: true });
+  }
+  if (failed) throw failed;
 });
 
 io.on("connection", socket => {

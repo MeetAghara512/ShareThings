@@ -304,6 +304,38 @@ describe("redis rooms: lists, locks and outages", { skip: !REDIS && "set TEST_RE
     }
   });
 
+  it("notices it was swept while its connection stayed up, and asks for its people back until that works", async () => {
+    const Redis = require("ioredis");
+    const raw = new Redis(REDIS);
+    const s = await connected(redisStore(REDIS, { prefix: TEST_PREFIX }));
+    const told = [];
+    let fail = true;
+    s.onReconnect(lost => {
+      told.push(lost);
+      if (fail) {
+        fail = false;
+        throw new Error("a room could not be changed"); // the first try fails
+      }
+    });
+    const original = console.error;
+    console.error = () => {};
+    try {
+      await sleep(1200); // on the list of copies by now
+      assert.deepEqual(told, [], "asked for its people back without being swept");
+      // What another copy does once it takes this one for stopped, while this copy's connection stays open
+      await raw.srem(`${TEST_PREFIX}copies`, s.copyId);
+      assert.ok(await eventually(() => told.length >= 2, 4000), `not asked again after a failed try: ${JSON.stringify(told)}`);
+      assert.deepEqual(told.slice(0, 2), [false, false]);
+      await sleep(1500);
+      assert.equal(told.length, 2, "asked again after it worked");
+      assert.equal(await raw.sismember(`${TEST_PREFIX}copies`, s.copyId), 1, "not back on the list of copies");
+    } finally {
+      console.error = original;
+      await s.close();
+      raw.disconnect();
+    }
+  });
+
   it("tells the server when Redis has lost its data", async () => {
     const Redis = require("ioredis");
     const raw = new Redis(REDIS);
