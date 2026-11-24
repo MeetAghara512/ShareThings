@@ -20,9 +20,10 @@ export const SocketProvider = (props) => {
       const socket = useMemo(() => {
             const URL = import.meta.env.REACT_APP_SOCKET_SERVER_URL;
 
-            // Socket.IO's normal start: long-polling first, then an upgrade to a WebSocket where the network
-            // allows it, so it also connects behind proxies that block WebSockets
-            return io(URL);
+            // WebSocket first: one connection stays on one server copy, so several copies work without sticky
+            // sessions. Long-polling only when a WebSocket cannot be opened (a proxy that blocks it); that
+            // fallback needs a single copy or sticky sessions
+            return io(URL, { transports: ["websocket", "polling"], tryAllTransports: true });
       }, []);
 
       const [status, setStatus] = useState(() => (socket.connected ? "connected" : "connecting"));
@@ -37,6 +38,18 @@ export const SocketProvider = (props) => {
                   socket.off("connect", update);
                   socket.off("disconnect", update);
             };
+      }, [socket]);
+
+      // A WebSocket handshake that hangs instead of failing (some proxies do that) never falls back by itself: the
+      // attempt only ends at the connect timeout, and the next one starts with WebSocket again. After such a timeout
+      // this tab starts with long-polling. Quick failures (a sleeping or unreachable server) keep WebSocket first,
+      // which several server copies without sticky sessions need
+      useEffect(() => {
+            const fallBack = err => {
+                  if (err?.message === "timeout") socket.io.opts.transports = ["polling", "websocket"];
+            };
+            socket.on("connect_error", fallBack);
+            return () => socket.off("connect_error", fallBack);
       }, [socket]);
 
       useEffect(() => {
