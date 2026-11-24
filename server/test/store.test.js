@@ -8,7 +8,9 @@ const { memoryStore, redisStore } = require("../store");
 const REDIS = process.env.TEST_REDIS_URL;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const unique = name => `test:${name}:${randomBytes(6).toString("hex")}`;
-const backends = [["memory", () => memoryStore()], ["redis", () => redisStore(REDIS)]];
+// Keys of their own, so the copies started by other test files never sweep these tests' rooms
+const TEST_PREFIX = `st-test-${randomBytes(4).toString("hex")}:`;
+const backends = [["memory", () => memoryStore()], ["redis", () => redisStore(REDIS, { prefix: TEST_PREFIX })]];
 
 // Waits until a new Redis client is connected, so a test does not run into the fail-open path by accident
 const connected = async store => {
@@ -74,6 +76,59 @@ for (const [name, make] of backends) {
       await exactly(shared, 120);
     });
 
+    it("changes a room one change at a time, also from two copies", async () => {
+      const a = await open(), b = name === "memory" ? a : await connected(make()); // memory is one process, one copy
+      try {
+        const room = unique("room");
+        // Each change reads the list, waits a moment in between, and adds itself: a lost update would show up as a gap
+        await Promise.all(Array.from({ length: 40 }, (_, i) => (i % 2 ? b : a).withRoom(room, doc => { doc.waiting.push(i); doc.host = { key: "h", awayUntil: 0 }; })));
+        assert.equal((await a.readRoom(room)).waiting.length, 40);
+      } finally {
+        if (b !== a) await b.close();
+      }
+    });
+
+    it("gives the last place to only one of many joins at once", async () => {
+      const a = await open(), b = name === "memory" ? a : await connected(make());
+      try {
+        const room = unique("full");
+        const tries = await Promise.all(Array.from({ length: 12 }, (_, i) => (i % 2 ? b : a).withRoom(room, doc => {
+          if (Object.keys(doc.members).length >= 2) return false;
+          doc.members[`socket${i}`] = { clientId: null, name: "x", seat: null, copy: "c" };
+          return true;
+        })));
+        assert.equal(tries.filter(Boolean).length, 2);
+        assert.equal(Object.keys((await a.readRoom(room)).members).length, 2);
+      } finally {
+        if (b !== a) await b.close();
+      }
+    });
+
+    it("saves nothing when a change fails, and runs effects only after saving", async () => {
+      const s = await open();
+      const room = unique("fail");
+      await assert.rejects(s.withRoom(room, doc => { doc.members.x = { copy: "c" }; throw new Error("broken change"); }));
+      assert.deepEqual((await s.readRoom(room)).members, {});
+      const seen = [];
+      await s.withRoom(room, (doc, effect) => { doc.members.y = { copy: "c" }; effect(() => seen.push("effect")); seen.push("change"); });
+      assert.deepEqual(seen, ["change", "effect"]);
+      assert.equal(await s.bothIn(room, "y", "y"), true);
+      assert.equal(await s.bothIn(room, "y", "z"), false);
+      await s.withRoom(room, doc => { delete doc.members.y; });
+      assert.deepEqual(await s.readRoom(room), { members: {}, held: {}, host: null, waiting: [], removed: [], denied: [] });
+    });
+
+    it("hands a room back when something in it is due", async () => {
+      const s = await open();
+      const room = unique("due"), due = [];
+      s.onDue(name => due.push([name, Date.now()]));
+      const until = Date.now() + 300;
+      await s.withRoom(room, doc => { doc.held.tab1234567890abcd = { id: "s1", name: "x", seat: null, until }; });
+      assert.ok(await (async () => { for (let i = 0; i < 40; i++) { if (due.some(([name]) => name === room)) return true; await sleep(50); } return false; })(), "never due");
+      const [, at] = due.find(([name]) => name === room);
+      assert.ok(at >= until - 5 && at < until + 1300, `due ${at - until} ms after its time`);
+    });
+
     it("forgets one counted request", async () => {
       const s = await open();
       const limits = [{ key: unique("forget"), max: 2, windowMs: 60000 }];
@@ -121,10 +176,37 @@ describe("redis store details", { skip: !REDIS && "set TEST_REDIS_URL to run aga
       assert.equal(store.ready(), false);
       await store.forget([{ key: "x", max: 1, windowMs: 1 }], null);
       assert.equal(errors.length, 1, errors.join(" | "));
-      assert.match(errors[0], /^Redis is unavailable, so limits are not enforced:/);
+      assert.match(errors[0], /^Redis is unavailable, so limits are not enforced and calls cannot start:/);
     } finally {
       console.error = original;
       await store.close();
+    }
+  });
+});
+
+describe("redis rooms across copies", { skip: !REDIS && "set TEST_REDIS_URL to run against Redis" }, () => {
+  it("hands the people of a stopped copy to a running one, and counts calls across copies", async () => {
+    const a = await connected(redisStore(REDIS, { prefix: TEST_PREFIX })), b = await connected(redisStore(REDIS, { prefix: TEST_PREFIX }));
+    const lost = [];
+    b.onCopyLost((name, copy) => lost.push([name, copy]));
+    const room = unique("lost");
+    try {
+      await a.withRoom(room, doc => {
+        doc.members.s1 = { clientId: null, name: "x", seat: null, copy: a.copyId };
+        doc.members.s2 = { clientId: null, name: "y", seat: null, copy: b.copyId };
+      });
+      assert.deepEqual(await a.roomsOf(a.copyId).then(rooms => rooms.includes(room)), true);
+      const { calls } = await b.liveCounts(1);
+      assert.ok(calls >= 1, "a room with two people is not counted as a call");
+    } finally {
+      await a.close(); // stops saying it is alive
+    }
+    try {
+      for (let i = 0; i < 90 && !lost.some(([name]) => name === room); i++) await sleep(100);
+      assert.deepEqual(lost.find(([name]) => name === room), [room, a.copyId]);
+    } finally {
+      await b.withRoom(room, doc => { doc.members = {}; });
+      await b.close();
     }
   });
 });
