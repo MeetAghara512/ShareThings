@@ -77,7 +77,7 @@ async function peekLimited(socket, ack) {
 // network check says to try again later instead of calling a good connection weak
 const statsLimited = async socket => !isLocal(socket) && !(await allow("socketStats", socket.id, MAX_STATS_PER_SOCKET));
 
-// True when this address already has max of the sockets waiting to be let in to one room
-const waitingLimited = (socket, waiting, max) => !isLocal(socket) && waiting.filter(s => clientAddress(s) === clientAddress(socket)).length >= max;
+// True when this address already has max of the people waiting to be let in to one room (their addresses, as asked)
+const waitingLimited = (socket, addresses, max) => !isLocal(socket) && addresses.filter(address => address === clientAddress(socket)).length >= max;
 
 module.exports = { clientAddress, limitConnections, joinLimited, peekLimited, statsLimited, waitingLimited };
