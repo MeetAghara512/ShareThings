@@ -103,8 +103,9 @@ const MoreMenu = ({ darkMode, quality, onQuality, onPopOut, onInfo, onToggleDark
 };
 
 // The call's one bar of controls. From 1024px it floats over the video, centered on it; below that it is a row
-// under the video. trouble: a mic or camera that is blocked or missing; its button is red with a "!" and its click tries to fix it
-const ControlBar = ({ darkMode, muted, cameraOff, trouble = {}, isScreen, infoOpen, quality, onQuality, onPopOut, onToggleMic, onToggleCamera, onToggleShare, onToggleInfo, onToggleDarkMode, removeName, onRemove, onLeave, showInfo = true }) => {
+// under the video. trouble: a mic or camera that is blocked or missing; its button is red with a "!" and its click tries to fix it.
+// waiting: not let in yet, so only what works on your own side is shown: mic, camera, More and Leave
+const ControlBar = ({ darkMode, muted, cameraOff, trouble = {}, isScreen, infoOpen, quality, onQuality, onPopOut, onToggleMic, onToggleCamera, onToggleShare, onToggleInfo, onToggleDarkMode, removeName, onRemove, onLeave, waiting = false }) => {
 	const chatOpen = useChatOpen();
 	const round = "w-10 h-10 sm:w-[3.25rem] sm:h-[3.25rem] shrink-0 rounded-2xl flex items-center justify-center text-xl transition-colors";
 	const idle = "bg-raised hover:bg-line text-ink";
@@ -127,11 +128,11 @@ const ControlBar = ({ darkMode, muted, cameraOff, trouble = {}, isScreen, infoOp
 				{trouble.video
 					? button(troubleText("video", trouble.video), onToggleCamera, off, <MdVideocamOff />, true, "camera")
 					: button(cameraOff ? "Turn on camera" : "Turn off camera", onToggleCamera, cameraOff ? off : idle, cameraOff ? <MdVideocamOff /> : <MdVideocam />, false, "camera")}
-				{CAN_SHARE_SCREEN && button(isScreen ? "Stop sharing" : "Share screen", onToggleShare, isScreen ? on : idle, <MdPresentToAll />, false, "share")}
-				<ChatButton className={round} look={idle} />
-				<ReactionButton className={round} look={idle} on={on} />
-				{showInfo && button("Meeting details", onToggleInfo, `${infoOpen ? on : idle} max-sm:hidden`, <MdInfoOutline />)}
-				<MoreMenu darkMode={darkMode} quality={quality} onQuality={onQuality} onPopOut={onPopOut} onInfo={showInfo ? onToggleInfo : null} onToggleDarkMode={onToggleDarkMode} removeName={removeName} onRemove={onRemove} className={`${round} ${idle}`} />
+				{CAN_SHARE_SCREEN && !waiting && button(isScreen ? "Stop sharing" : "Share screen", onToggleShare, isScreen ? on : idle, <MdPresentToAll />, false, "share")}
+				{!waiting && <ChatButton className={round} look={idle} />}
+				{!waiting && <ReactionButton className={round} look={idle} on={on} />}
+				{!waiting && button("Meeting details", onToggleInfo, `${infoOpen ? on : idle} max-sm:hidden`, <MdInfoOutline />)}
+				<MoreMenu darkMode={darkMode} quality={quality} onQuality={onQuality} onPopOut={onPopOut} onInfo={waiting ? null : onToggleInfo} onToggleDarkMode={onToggleDarkMode} removeName={removeName} onRemove={onRemove} className={`${round} ${idle}`} />
 				<span aria-hidden="true" className="hidden sm:block w-px h-8 mx-0.5 bg-line" />
 				<button type="button" onClick={onLeave} title="Leave call" aria-label="Leave call" className={`${round} !w-[3.25rem] sm:!w-[4.5rem] ${off}`}>
 					<MdCallEnd />

@@ -939,7 +939,7 @@ return (
 					trouble={deviceTrouble}
 					isScreen={isScreen}
 					infoOpen={infoOpen}
-					showInfo={admission !== "asking" && admission !== "empty"}
+					waiting={admission === "asking" || admission === "empty"}
 					onToggleMic={deviceTrouble.audio ? () => fixDevice("audio") : handleToggleMic}
 					onToggleCamera={deviceTrouble.video ? () => fixDevice("video") : handleToggleCamera}
 					onToggleShare={isScreen ? stopShare : startShare}
