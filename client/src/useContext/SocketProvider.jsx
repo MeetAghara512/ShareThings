@@ -20,9 +20,10 @@ export const SocketProvider = (props) => {
       const socket = useMemo(() => {
             const URL = import.meta.env.REACT_APP_SOCKET_SERVER_URL;
 
-            // Socket.IO's normal start: long-polling first, then an upgrade to a WebSocket where the network
-            // allows it, so it also connects behind proxies that block WebSockets
-            return io(URL);
+            // WebSocket first: one connection stays on one server copy, so several copies work without sticky
+            // sessions. Long-polling only when a WebSocket cannot be opened (a proxy that blocks it); that
+            // fallback needs a single copy or sticky sessions
+            return io(URL, { transports: ["websocket", "polling"], tryAllTransports: true });
       }, []);
 
       const [status, setStatus] = useState(() => (socket.connected ? "connected" : "connecting"));
