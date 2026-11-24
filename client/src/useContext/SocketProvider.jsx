@@ -40,6 +40,18 @@ export const SocketProvider = (props) => {
             };
       }, [socket]);
 
+      // A WebSocket handshake that hangs instead of failing (some proxies do that) never falls back by itself: the
+      // attempt only ends at the connect timeout, and the next one starts with WebSocket again. After such a timeout
+      // this tab starts with long-polling. Quick failures (a sleeping or unreachable server) keep WebSocket first,
+      // which several server copies without sticky sessions need
+      useEffect(() => {
+            const fallBack = err => {
+                  if (err?.message === "timeout") socket.io.opts.transports = ["polling", "websocket"];
+            };
+            socket.on("connect_error", fallBack);
+            return () => socket.off("connect_error", fallBack);
+      }, [socket]);
+
       useEffect(() => {
             if (status !== "connecting") return;
             const id = setTimeout(() => setStatus(s => (s === "connecting" ? "failed" : s)), FAIL_AFTER);
