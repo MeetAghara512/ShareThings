@@ -202,11 +202,159 @@ describe("redis rooms across copies", { skip: !REDIS && "set TEST_REDIS_URL to r
       await a.close(); // stops saying it is alive
     }
     try {
-      for (let i = 0; i < 90 && !lost.some(([name]) => name === room); i++) await sleep(100);
+      // A copy judges others only after 2 * ALIVE_MS of being in touch with Redis itself, and a's "alive" lasts ALIVE_MS
+      for (let i = 0; i < 160 && !lost.some(([name]) => name === room); i++) await sleep(100);
       assert.deepEqual(lost.find(([name]) => name === room), [room, a.copyId]);
     } finally {
       await b.withRoom(room, doc => { doc.members = {}; });
       await b.close();
+    }
+  });
+});
+
+// A TCP proxy in front of the test Redis, to make it unreachable and reachable again on demand
+const net = require("node:net");
+const proxy = () => {
+  const target = new URL(REDIS);
+  let server = null;
+  const sockets = new Set();
+  return {
+    start: (port = 0) => new Promise(resolve => {
+      server = net.createServer(client => {
+        const upstream = net.connect(Number(target.port || 6379), target.hostname);
+        for (const s of [client, upstream]) {
+          sockets.add(s);
+          s.on("error", () => {});
+          s.on("close", () => { client.destroy(); upstream.destroy(); sockets.delete(s); });
+        }
+        client.pipe(upstream).pipe(client);
+      });
+      server.listen(port, "127.0.0.1", () => resolve(server.address().port));
+    }),
+    stop: () => new Promise(resolve => {
+      sockets.forEach(s => s.destroy());
+      server.close(() => resolve());
+    }),
+  };
+};
+const freePort = () => new Promise(resolve => { const s = net.createServer().listen(0, "127.0.0.1", () => { const { port } = s.address(); s.close(() => resolve(port)); }); });
+const eventually = async (check, ms) => { for (const t = Date.now(); Date.now() - t < ms; await sleep(100)) if (await check()) return true; return false; };
+
+describe("redis rooms: lists, locks and outages", { skip: !REDIS && "set TEST_REDIS_URL to run against Redis" }, () => {
+  it("lists a room for a copy only while that copy has people in it", async () => {
+    const s = await connected(redisStore(REDIS, { prefix: TEST_PREFIX }));
+    try {
+      const room = unique("listed");
+      await s.withRoom(room, doc => { doc.members.s1 = { copy: "copyX" }; doc.members.s2 = { copy: "copyY" }; });
+      assert.ok((await s.roomsOf("copyX")).includes(room) && (await s.roomsOf("copyY")).includes(room));
+      await s.withRoom(room, doc => { delete doc.members.s1; });
+      assert.ok(!(await s.roomsOf("copyX")).includes(room), "still listed for a copy with nobody there");
+      assert.ok((await s.roomsOf("copyY")).includes(room));
+      await s.withRoom(room, doc => { delete doc.members.s2; });
+      assert.ok(!(await s.roomsOf("copyY")).includes(room));
+    } finally {
+      await s.close();
+    }
+  });
+
+  it("keeps the room locked until the change's messages are sent", async () => {
+    const Redis = require("ioredis");
+    const raw = new Redis(REDIS);
+    const s = await connected(redisStore(REDIS, { prefix: TEST_PREFIX }));
+    try {
+      const room = unique("locked");
+      let during;
+      await s.withRoom(room, (doc, effect) => {
+        doc.members.s1 = { copy: "c" };
+        effect(() => { during = raw.get(`${TEST_PREFIX}lock:${room}`); }); // sent before the store frees the lock
+      });
+      assert.ok(await during, "the lock was already free when the messages went out");
+      assert.equal(await raw.get(`${TEST_PREFIX}lock:${room}`), null, "the lock was not freed afterwards");
+    } finally {
+      await s.close();
+      raw.disconnect();
+    }
+  });
+
+  it("does not take over the people of copies that were only cut off from Redis for longer than ALIVE_MS", async () => {
+    const p = proxy(), port = await p.start();
+    const via = `redis://127.0.0.1:${port}`;
+    const a = await connected(redisStore(via, { prefix: TEST_PREFIX })), b = await connected(redisStore(via, { prefix: TEST_PREFIX }));
+    const lost = [], back = [];
+    for (const [s, name] of [[a, "a"], [b, "b"]]) {
+      s.onCopyLost((room, copy) => lost.push([name, room, copy]));
+      s.onReconnect(wasLost => back.push([name, wasLost]));
+    }
+    const room = unique("outage");
+    try {
+      await a.withRoom(room, doc => { doc.members.sa = { copy: a.copyId }; doc.members.sb = { copy: b.copyId }; });
+      await p.stop();
+      await sleep(8000); // longer than ALIVE_MS: both copies' "alive" run out meanwhile
+      await p.start(port);
+      assert.ok(await eventually(() => a.ready() && b.ready(), 15000), "did not reconnect");
+      await sleep(13000); // past the 2 * ALIVE_MS a copy waits before judging others
+      assert.deepEqual(lost.filter(([, r]) => r === room), [], "a copy took over the other's people");
+      assert.deepEqual(Object.keys((await a.readRoom(room)).members).sort(), ["sa", "sb"]);
+      assert.ok(back.some(([n, l]) => n === "a" && l === false) && back.some(([n, l]) => n === "b" && l === false), JSON.stringify(back));
+    } finally {
+      await a.withRoom(room, doc => { doc.members = {}; }).catch(() => {});
+      await a.close();
+      await b.close();
+      await p.stop();
+    }
+  });
+
+  it("tells the server when Redis has lost its data", async () => {
+    const Redis = require("ioredis");
+    const raw = new Redis(REDIS);
+    const s = await connected(redisStore(REDIS, { prefix: TEST_PREFIX }));
+    const told = [];
+    s.onReconnect(lost => told.push(lost));
+    try {
+      await sleep(1200); // the run id has been read
+      const before = s.runId();
+      await raw.del(`${TEST_PREFIX}run`); // as after a Redis restart without saved data
+      assert.ok(await eventually(() => told.includes(true), 3000), "not told");
+      assert.notEqual(s.runId(), before);
+    } finally {
+      await s.close();
+      raw.disconnect();
+    }
+  });
+
+  it("starts while Redis is unreachable without ending the process, and works once Redis comes up", async () => {
+    const { Server } = require("socket.io");
+    const rejections = [];
+    const onRejection = err => rejections.push(err);
+    process.on("unhandledRejection", onRejection);
+    const port = await freePort(), p = proxy();
+    // Retries a hundred times faster than usual, so their limit (about 70 s in production) is passed in a moment
+    const s = redisStore(`redis://127.0.0.1:${port}`, { prefix: TEST_PREFIX, redisOptions: { retryStrategy: () => 20 } });
+    const io = new Server();
+    const errors = [], original = console.error, warn = console.warn;
+    console.error = (...args) => errors.push(args.join(" "));
+    console.warn = () => {};
+    try {
+      io.adapter(s.adapter());
+      await sleep(2500);
+      assert.deepEqual(rejections.map(String), [], "an unhandled rejection would end the server");
+      assert.equal(s.ready(), false);
+      assert.equal((await s.take([{ key: unique("down"), max: 1, windowMs: 1000 }])).ok, true, "limits fail open");
+      await p.start(port);
+      assert.ok(await eventually(() => s.ready(), 5000), "did not connect once Redis came up");
+      // The adapter's subscriber, which waited for Redis, has subscribed by now
+      assert.ok(await eventually(async () => (await io.of("/").adapter.serverCount().catch(() => 0)) >= 1, 5000), "the adapter did not subscribe");
+      const room = unique("up");
+      await s.withRoom(room, doc => { doc.members.s1 = { copy: s.copyId }; });
+      assert.equal(await s.bothIn(room, "s1", "s1"), true);
+      await s.withRoom(room, doc => { doc.members = {}; });
+      assert.deepEqual(rejections.map(String), []);
+    } finally {
+      process.off("unhandledRejection", onRejection);
+      console.error = original;
+      console.warn = warn;
+      await s.close(); // also closes the adapter's clients; the server here has no HTTP server to close
+      await p.stop().catch(() => {});
     }
   });
 });

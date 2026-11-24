@@ -36,16 +36,25 @@ end
 return 0
 `;
 
-// Saves a room only while this copy still holds its lock, then frees the lock. KEYS: lock, room, members, calls, due.
-// ARGV: lock token, room, document (empty to delete it), when it is next due (0 for never), then the member ids
+// Saves a room only while this copy still holds its lock; the lock is freed after the change's messages are sent.
+// Also lists the room for each copy with people in it (so they can be taken over if that copy stops) and unlists it
+// for copies that no longer have anyone there. KEYS: lock, room, members, calls, due, copies. ARGV: lock token, room,
+// document (empty to delete it), when it is next due (0 for never), key prefix, then a count and the member ids, a
+// count and the copies with people here, and the copies that had people here before
 const SAVE = `
 if redis.call("GET", KEYS[1]) ~= ARGV[1] then return 0 end
+local name, ids = ARGV[2], tonumber(ARGV[6])
 if ARGV[3] == "" then redis.call("DEL", KEYS[2]) else redis.call("SET", KEYS[2], ARGV[3]) end
 redis.call("DEL", KEYS[3])
-if #ARGV > 4 then redis.call("SADD", KEYS[3], unpack(ARGV, 5)) end
-if #ARGV - 4 == 2 then redis.call("SADD", KEYS[4], ARGV[2]) else redis.call("SREM", KEYS[4], ARGV[2]) end
-if ARGV[4] == "0" then redis.call("ZREM", KEYS[5], ARGV[2]) else redis.call("ZADD", KEYS[5], ARGV[4], ARGV[2]) end
-redis.call("DEL", KEYS[1])
+if ids > 0 then redis.call("SADD", KEYS[3], unpack(ARGV, 7, 6 + ids)) end
+if ids == 2 then redis.call("SADD", KEYS[4], name) else redis.call("SREM", KEYS[4], name) end
+if ARGV[4] == "0" then redis.call("ZREM", KEYS[5], name) else redis.call("ZADD", KEYS[5], ARGV[4], name) end
+local here = tonumber(ARGV[7 + ids])
+for i = 8 + ids, 7 + ids + here do
+  redis.call("SADD", ARGV[5] .. "copy:" .. ARGV[i], name)
+  redis.call("SADD", KEYS[6], ARGV[i])
+end
+for i = 8 + ids + here, #ARGV do redis.call("SREM", ARGV[5] .. "copy:" .. ARGV[i], name) end
 return 1
 `;
 const UNLOCK = `if redis.call("GET", KEYS[1]) == ARGV[1] then return redis.call("DEL", KEYS[1]) end return 0`;
@@ -139,6 +148,7 @@ function memoryStore() {
       onDue = handler;
     },
     onCopyLost() {}, // one process: no other copy to lose
+    onReconnect() {},
     roomsOf: async () => [],
     runId: (() => { const id = randomBytes(8).toString("hex"); return () => id; })(),
     liveCounts: async (online, calls) => ({ online, calls }),
@@ -154,16 +164,21 @@ function memoryStore() {
 // If Redis cannot be reached, limits are not enforced: calls must keep working. Commands fail at once instead of
 // queuing while the connection is down, and one that gets no answer in a second counts as a failure too. Rooms cannot
 // be changed without Redis: those calls throw, and the server refuses a new join rather than guess
-function redisStore(url, { prefix = PREFIX } = {}) {
+// redisOptions: for tests, such as a faster retryStrategy
+function redisStore(url, { prefix = PREFIX, redisOptions = {} } = {}) {
   const Redis = require("ioredis");
-  const client = new Redis(url, { enableOfflineQueue: false, maxRetriesPerRequest: 1, commandTimeout: 1000 });
+  const client = new Redis(url, { enableOfflineQueue: false, maxRetriesPerRequest: 1, commandTimeout: 1000, ...redisOptions });
   client.defineCommand("takeAll", { lua: TAKE });
-  client.defineCommand("saveRoom", { numberOfKeys: 5, lua: SAVE });
+  client.defineCommand("saveRoom", { numberOfKeys: 6, lua: SAVE });
   client.defineCommand("unlock", { numberOfKeys: 1, lua: UNLOCK });
   const copyId = randomBytes(8).toString("hex");
   const key = (...parts) => prefix + parts.join(":");
-  let onDue = () => {}, onCopyLost = () => {};
+  let onDue = () => {}, onCopyLost = () => {}, onReconnect = () => {};
   let runId = randomBytes(8).toString("hex"); // replaced by the shared one as soon as Redis answers
+  let seenRun = null; // the shared run id last read: a new one means Redis lost its data
+  let healthySince = 0; // since when every tick has reached Redis; 0 while it cannot
+  let connections = 0;
+  const extra = []; // the adapter's clients, closed with the store
 
   // One line a minute while it lasts, not one per request or per reconnect attempt
   let complainedAt = 0;
@@ -175,27 +190,41 @@ function redisStore(url, { prefix = PREFIX } = {}) {
   client.on("error", complain);
 
   // Every second: say this copy is alive, and let one copy at a time end what is due and take over the people of a
-  // copy that stopped. The run id is shared, so a person who moves to another copy is not told the server restarted
-  const tick = async () => {
+  // copy that stopped. The run id is shared, so a person who moves to another copy is not told the server restarted.
+  // After any gap in reaching Redis (an outage, or Redis frozen), every copy's "alive" may have run out: a copy only
+  // judges others stopped once it has itself reached Redis for 2 * ALIVE_MS without a gap, enough for the others to
+  // reconnect (at most about 5 s apart) and say they are alive again
+  const tick = async (reconnected = false) => {
     try {
       await client.set(key("alive", copyId), "1", "PX", ALIVE_MS);
       await client.sadd(key("copies"), copyId);
-      await client.set(key("run"), runId, "NX");
-      runId = (await client.get(key("run"))) || runId;
+      let run = await client.get(key("run"));
+      if (!run) {
+        await client.set(key("run"), randomBytes(8).toString("hex"), "NX");
+        run = await client.get(key("run"));
+      }
+      const lost = seenRun !== null && run !== seenRun;
+      seenRun = runId = run;
+      if (reconnected || lost) await onReconnect(lost);
+      healthySince ||= Date.now();
       if (!(await client.set(key("sweep"), copyId, "PX", TICK_MS - 100, "NX"))) return;
       for (const room of await client.zrangebyscore(key("due"), "-inf", Date.now())) await onDue(room);
+      if (Date.now() - healthySince < 2 * ALIVE_MS) return;
       for (const copy of await client.smembers(key("copies"))) {
         if (copy === copyId || (await client.exists(key("alive", copy)))) continue;
         for (const room of await client.smembers(key("copy", copy))) await onCopyLost(room, copy);
         await client.multi().del(key("copy", copy)).srem(key("copies"), copy).hdel(key("online"), copy).exec();
       }
     } catch (err) {
+      healthySince = 0;
       complain(err);
     }
   };
   const ticker = setInterval(tick, TICK_MS);
   ticker.unref();
-  client.on("ready", tick); // at once on (re)connecting, so this copy is known as alive before it seats anyone
+  // At once on (re)connecting, so this copy is known as alive before it seats anyone, and gets its people back
+  client.on("ready", () => tick(connections++ > 0));
+  client.on("close", () => (healthySince = 0));
 
   return {
     shared: true,
@@ -229,14 +258,15 @@ function redisStore(url, { prefix = PREFIX } = {}) {
       try {
         const saved = await client.get(key("room", name));
         const room = saved ? JSON.parse(saved) : emptyRoom();
+        const copiesOf = r => new Set(Object.values(r.members).map(member => member.copy));
+        const before = copiesOf(room);
         const effects = [];
         const result = change(room, effect => effects.push(effect));
         const due = nextDue(room);
-        const ids = Object.keys(room.members);
-        const ok = await client.saveRoom(lock, key("room", name), key("members", name), key("calls"), key("due"), token, name, isEmpty(room) ? "" : JSON.stringify(room), due === Infinity ? 0 : due, ...ids);
+        const ids = Object.keys(room.members), here = [...copiesOf(room)], gone = [...before].filter(copy => !here.includes(copy));
+        const ok = await client.saveRoom(lock, key("room", name), key("members", name), key("calls"), key("due"), key("copies"), token, name, isEmpty(room) ? "" : JSON.stringify(room), due === Infinity ? 0 : due, prefix, ids.length, ...ids, here.length, ...here, ...gone);
         if (!ok) throw new Error("room lock expired");
-        // Which rooms each copy has people in, so they can be taken over if that copy stops
-        for (const copy of new Set(Object.values(room.members).map(member => member.copy))) await client.multi().sadd(key("copy", copy), name).sadd(key("copies"), copy).exec();
+        // Still holding the lock, so the next change's messages cannot overtake these
         effects.forEach(effect => effect());
         return result;
       } finally {
@@ -258,6 +288,10 @@ function redisStore(url, { prefix = PREFIX } = {}) {
     onCopyLost(handler) {
       onCopyLost = handler;
     },
+    // handler(lost): back in touch with Redis; lost when Redis no longer has the data it had
+    onReconnect(handler) {
+      onReconnect = handler;
+    },
     // Rooms where a copy has (or recently had) people
     roomsOf: copy => client.smembers(key("copy", copy)),
     runId: () => runId,
@@ -270,7 +304,9 @@ function redisStore(url, { prefix = PREFIX } = {}) {
     // handle a failed publish, which would otherwise end the process while Redis is down
     adapter() {
       const { createAdapter } = require("@socket.io/redis-adapter");
-      const pub = new Redis(url), sub = pub.duplicate();
+      // The adapter does not catch its subscriptions either: the subscriber waits for Redis however long it takes
+      const pub = new Redis(url, redisOptions), sub = new Redis(url, { ...redisOptions, maxRetriesPerRequest: null });
+      extra.push(pub, sub);
       pub.on("error", complain);
       sub.on("error", complain);
       const publish = pub.publish.bind(pub);
@@ -280,6 +316,7 @@ function redisStore(url, { prefix = PREFIX } = {}) {
     ready: () => client.status === "ready",
     async close() {
       clearInterval(ticker);
+      for (const other of extra.splice(0)) other.disconnect();
       await client.quit().catch(() => client.disconnect());
     },
   };
