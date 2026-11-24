@@ -1,8 +1,10 @@
 // Live counter for the first page: people online (one per browser tab) and calls in progress (rooms with two
-// people). Only these two numbers ever leave the server: never names, room codes or addresses.
+// people). Only these two numbers ever leave the server: never names, room codes or addresses. With several copies
+// sharing Redis, each adds its own people to a shared count and calls are counted there (see store.js); every copy
+// tells only its own connections, so nobody gets the same update twice.
 const EVERY = 5000; // at most one update to everyone this often, and only when a number changed
 
-module.exports = function liveStats(io) {
+module.exports = function liveStats(io, store) {
   const nsp = io.of("/");
 
   // Counted from the connections that exist right now; ones refused by the limits never get here
@@ -21,9 +23,10 @@ module.exports = function liveStats(io) {
   // next answer is fresh. The age limit covers a tab that changes its id without changing rooms
   let counted = null;
   let countedAt = 0;
+  let totals = null; // from Redis, once known
   const current = () => {
     if (!counted || Date.now() - countedAt >= EVERY) {
-      counted = count();
+      counted = totals ?? count();
       countedAt = Date.now();
     }
     return counted;
@@ -40,12 +43,25 @@ module.exports = function liveStats(io) {
       if (now.online === sent.online && now.calls === sent.calls) return;
       sent = now;
       sentAt = Date.now();
-      io.emit("stats:update", now);
+      io.local.emit("stats:update", now);
     }, Math.max(0, sentAt + EVERY - Date.now()));
   };
   // Every connection joins a room of its own and leaves all rooms when it ends, so these cover connects too
   nsp.adapter.on("join-room", changed);
   nsp.adapter.on("leave-room", changed);
+
+  if (store.shared) {
+    const refresh = async () => {
+      try {
+        totals = await store.liveCounts(count().online);
+        changed();
+      } catch {
+        totals = null; // Redis is down: this copy's own numbers until it is back
+      }
+    };
+    setInterval(refresh, EVERY).unref();
+    refresh();
+  }
 
   return { current };
 };
