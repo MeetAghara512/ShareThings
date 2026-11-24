@@ -1,0 +1,54 @@
+# Render Blueprint: the live setup as code (see "Deploy with a Blueprint" in README.md).
+# Secrets are never written here: variables with sync: false keep the values set in the Render Dashboard.
+services:
+  # The signaling server
+  - type: web
+    name: sharethings-backend
+    runtime: node
+    plan: free
+    rootDir: server
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: GMAIL_REFRESH_TOKEN
+        sync: false
+      - key: GMAIL_CLIENT_SECRET
+        sync: false
+      - key: XIRSYS_IDENT
+        sync: false
+      - key: XIRSYS_SECRET
+        sync: false
+      - key: XIRSYS_CHANNEL
+        sync: false
+
+  # The app. Paths below are relative to rootDir
+  - type: web
+    name: sharethings-web
+    runtime: static
+    rootDir: client
+    buildCommand: npm ci && npm run build
+    staticPublishPath: ./build
+    envVars:
+      - key: REACT_APP_SOCKET_SERVER_URL
+        value: https://sharethings-backend.onrender.com
+    # Room links like /room/abc-defg-hij open the app
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    headers:
+      - path: /*
+        name: Content-Security-Policy
+        value: "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://sharethings-backend.onrender.com wss://sharethings-backend.onrender.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: Referrer-Policy
+        value: strict-origin-when-cross-origin
+      - path: /*
+        name: Permissions-Policy
+        value: camera=(self), microphone=(self), display-capture=(self)
