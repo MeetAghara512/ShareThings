@@ -12,6 +12,17 @@ services:
       - GMAIL_CLIENT_SECRET
       - GMAIL_REFRESH_TOKEN
       - INVITE_FROM_EMAIL
+      # Empty: one server copy keeps everything in memory. For several copies, set it to redis://redis:6379 and
+      # start the redis service too: REDIS_URL=redis://redis:6379 docker compose --profile scale up --scale server=2
+      - REDIS_URL
+
+  # Optional shared state for several server copies; starts only with --profile scale
+  redis:
+    image: redis:7-alpine
+    profiles: ["scale"]
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    expose:
+      - "6379"
 
   # Open http://localhost:3000. The app talks to the server through this container's nginx, so its
   # build needs no server address
