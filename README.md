@@ -212,6 +212,8 @@ Then open http://localhost:3000. nginx in the client container serves the app an
 
 ## Deploy on Render
 
+These settings are also written in [`render.yaml`](render.yaml); see [Deploy with a Blueprint](#deploy-with-a-blueprint) to manage them from Git instead.
+
 - **Server:** a Web Service with root directory `server`, build command `npm ci`, start command `npm start`, health check path `/health`, and the settings above as environment variables (`NODE_VERSION`, `XIRSYS_*`, `GMAIL_*`).
 - **App:** a Static Site with root directory `client`, build command `npm ci && npm run build`, publish directory `build`, and `REACT_APP_SOCKET_SERVER_URL` set to the server's address. Also set:
   - **Redirects/Rewrites:** `/*` to `/index.html` as a Rewrite, so room links like `/room/abc-defg-hij` open the app.
@@ -222,6 +224,23 @@ Then open http://localhost:3000. nginx in the client container serves the app an
     - `Permissions-Policy`: `camera=(self), microphone=(self), display-capture=(self)`
 
 The free server sleeps when idle. The first visit wakes it, which can take up to a minute; the app says so while it waits.
+
+## Deploy with a Blueprint
+
+[`render.yaml`](render.yaml) is a Render [Blueprint](https://render.com/docs/infrastructure-as-code) that describes the two services above as code. The secret settings (`GMAIL_*`, `XIRSYS_*`) are listed with `sync: false`, so their values stay in the Render Dashboard and never go into Git.
+
+**Taking over the existing services.** Render's docs say that when a new Blueprint matches resources that already exist in the workspace, Render [adds a suffix to the name of each new resource](https://render.com/docs/infrastructure-as-code#replicating-a-blueprint): it creates copies instead of taking over the existing services. So:
+
+1. In the Render Dashboard, select `sharethings-backend` and `sharethings-web` and click **Generate Blueprint**. Compare the generated file with `render.yaml`, and copy into `render.yaml` anything set there that it lacks, such as a branch, build filters or custom domains. Render's docs warn that options left out of the file can be set to Render's defaults, and build filters left out are cleared.
+2. Merge `render.yaml` into `main`.
+3. Create the Blueprint as the Generate Blueprint page describes, linked to the `main` branch.
+4. Before clicking **Deploy Blueprint**, read the list of changes. It must show changes to `sharethings-backend` and `sharethings-web`. If it says the Blueprint matches existing resources and lists new services with a suffix, stop: deploying would create a second copy of both services, without their secrets.
+5. If Render asks for the `sync: false` values, enter the current ones from the existing services. Render keeps existing environment variables that the file does not set, and ignores `sync: false` variables on every later sync.
+6. Optionally, set **Auto Sync** to **No** on the Blueprint's Settings page and use **Manual sync** to choose when changes are applied.
+
+After that, change these settings in `render.yaml`, not in the Dashboard: a Dashboard change that conflicts with the file is overwritten on the next sync. The values written in the file (`NODE_VERSION`, `REACT_APP_SOCKET_SERVER_URL`, the rewrite and the headers) replace the Dashboard's on each sync. Header and rewrite rules that exist only in the Dashboard are kept, and removing a service from the file does not delete it.
+
+**New setup**, for example in a new Render workspace: click **New > Blueprint**, connect the repo, and enter the secret values when asked. If the services get other names, change `REACT_APP_SOCKET_SERVER_URL` and the CSP host in `render.yaml`, `ALLOWED_ORIGINS` in `server/index.js`, and the Google sign-in redirect addresses to match.
 
 ## Privacy
 
@@ -242,4 +261,5 @@ server/
   invite.js            email invites (Gmail API)
   stats.js             live counter for the first page
 docker-compose.yml
+render.yaml            Render Blueprint (the two services as code)
 ```
