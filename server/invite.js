@@ -1,10 +1,11 @@
 // Email invites: a signed-in user who is waiting in a room can have the room link mailed to a guest.
 // Sent from the app's own Gmail account through the Gmail API (HTTPS; the host blocks outbound SMTP).
-// Rate limits live in memory, so they reset when the server restarts.
+// Rate limits are kept in the store (see store.js): in memory, so they reset when the server restarts, or in Redis.
 const crypto = require("crypto");
 const { OAuth2Client } = require("google-auth-library");
 const MailComposer = require("nodemailer/lib/mail-composer");
 const { clientAddress } = require("./limits");
+const { getStore } = require("./store");
 
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
@@ -12,28 +13,15 @@ const YEAR = 365 * DAY;
 // A bare address only: no display name, group or comment syntax that a mail parser would read differently
 const EMAIL_RE = /^[^\s@<>"(),;:[\]\\]+@[^\s@<>"(),;:[\]\\]+\.[^\s@<>"(),;:[\]\\]+$/;
 
-// Each limit maps a key (sender email, IP, recipient) to the timestamps of its recent invites
+// Invites per sender email, per IP and per recipient mailbox, checked in this order
 const LIMITS = {
-  sender: { max: 5, windowMs: HOUR, sent: new Map(), error: "You have sent too many invites. Try again in an hour." },
-  ip: { max: 10, windowMs: HOUR, sent: new Map(), error: "Too many invites from your network. Try again in an hour." },
-  recipient: { max: 3, windowMs: DAY, sent: new Map(), error: "This person has already been invited several times today. Try again tomorrow." }
+  sender: { max: 5, windowMs: HOUR, error: "You have sent too many invites. Try again in an hour." },
+  ip: { max: 10, windowMs: HOUR, error: "Too many invites from your network. Try again in an hour." },
+  recipient: { max: 3, windowMs: DAY, error: "This person has already been invited several times today. Try again tomorrow." }
 };
 
-// Number of invites still inside the window; expired timestamps and empty keys are dropped
-function recentCount({ sent, windowMs }, key, now) {
-  const recent = (sent.get(key) || []).filter(t => now - t < windowMs);
-  if (recent.length) sent.set(key, recent);
-  else sent.delete(key);
-  return recent.length;
-}
-
-// Keys that are never used again would otherwise stay in memory forever
-setInterval(() => {
-  const now = Date.now();
-  for (const limit of Object.values(LIMITS)) {
-    for (const key of limit.sent.keys()) recentCount(limit, key, now);
-  }
-}, HOUR).unref();
+// Store keys are hashed, so email addresses never appear in plain text in a shared Redis
+const limitKey = (type, value) => `invite:${type}:${crypto.createHash("sha256").update(value).digest("hex")}`;
 
 // Addresses that reach the same mailbox share one per-recipient limit: +tags everywhere, dots for Gmail
 function mailboxKey(address) {
@@ -151,12 +139,11 @@ async function sendInvite(socket, { to, room, when, timeZone }, allowedOrigins, 
       ip: clientAddress(socket),
       recipient: mailboxKey(to)
     };
-    const now = Date.now();
-    for (const [type, limit] of Object.entries(LIMITS)) {
-      if (recentCount(limit, keys[type], now) >= limit.max) return { error: limit.error };
-    }
-    // Count the invite before sending so parallel requests cannot slip past a limit; undone below if it is not sent
-    for (const [type, { sent }] of Object.entries(LIMITS)) sent.set(keys[type], [...(sent.get(keys[type]) || []), now]);
+    // Checked and counted in one step before sending, so parallel requests cannot slip past a limit; undone below if
+    // it is not sent
+    const limits = Object.entries(LIMITS).map(([type, { max, windowMs }]) => ({ key: limitKey(type, keys[type]), max, windowMs }));
+    const counted = await getStore().take(limits);
+    if (!counted.ok) return { error: Object.values(LIMITS)[counted.index].error };
 
     // The name the sender typed on the join screen, else their Google name; the verified email is always shown next to it.
     // "Guest" is what the server stores when no name was typed, so it does not count as a typed name.
@@ -179,12 +166,7 @@ async function sendInvite(socket, { to, room, when, timeZone }, allowedOrigins, 
     if (!failure) return { ok: true };
 
     console.error("Invite email was not sent:", failure);
-    for (const [type, { sent }] of Object.entries(LIMITS)) {
-      const list = sent.get(keys[type]) || [];
-      const i = list.indexOf(now);
-      if (i !== -1) list.splice(i, 1);
-      if (!list.length) sent.delete(keys[type]);
-    }
+    await getStore().forget(limits, counted.mark);
     return { error: "The invite could not be sent. Copy the invite link above and send it yourself." };
   } catch (err) {
     console.error("Invite failed:", err.message);
