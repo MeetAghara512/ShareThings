@@ -6,7 +6,7 @@ Audio, video, chat and files travel directly between the two browsers, or throug
 
 **Live:** https://sharethings-web.onrender.com
 
-[Features](#features) · [Tech stack](#tech-stack) · [Architecture](#architecture) · [Engineering highlights](#engineering-highlights) · [Run it locally](#run-it-locally) · [Settings](#settings) · [Docker](#docker) · [Deploy](#deploy-on-render) · [Privacy](#privacy) · [Project layout](#project-layout)
+[Features](#features) · [Tech stack](#tech-stack) · [Architecture](#architecture) · [Engineering highlights](#engineering-highlights) · [Run it locally](#run-it-locally) · [Settings](#settings) · [Docker](#docker) · [Deploy](#deploy-on-render) · [Scaling](#scaling-optional) · [Privacy](#privacy) · [Project layout](#project-layout)
 
 ## Features
 
@@ -197,6 +197,7 @@ Server (in `server/.env`, read at start, or in the environment). All are optiona
 | `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN` | Email invites, sent through the Gmail API |
 | `INVITE_FROM_EMAIL` | Sender address for invites (default `sharethings.invites@gmail.com`) |
 | `NODE_VERSION` | On Render only: the Node.js version to use, e.g. `22` |
+| `REDIS_URL` | Keeps rate limits in Redis instead of the server's memory (see [Scaling](#scaling-optional)) |
 
 App: `REACT_APP_SOCKET_SERVER_URL` is the signaling server's address; it is built into the app. Leave it unset when the app and the server are served from one address (the Docker setup below).
 
@@ -223,6 +224,10 @@ Then open http://localhost:3000. nginx in the client container serves the app an
 
 The free server sleeps when idle. The first visit wakes it, which can take up to a minute; the app says so while it waits.
 
+## Scaling (optional)
+
+Without `REDIS_URL` the server keeps its rate limits in memory, as before. With `REDIS_URL` set (for example `redis://localhost:6379`), the connection, join, room-check and invite limits are kept in Redis instead, so they survive a server restart. If Redis cannot be reached, calls keep working, limits are not enforced, an error is logged once a minute, and `/health` still answers `200` (saying Redis is down), so the host does not restart the server and cut calls. Rooms and calls still live in one server's memory, so run a single copy for now.
+
 ## Privacy
 
 Calls are not recorded and there is no user database. See the [Privacy Policy](client/public/privacy.html) and [Terms of Service](client/public/terms.html), served at `/privacy.html` and `/terms.html`.
@@ -238,6 +243,7 @@ client/                React app (Vite), nginx.conf and Dockerfile
 server/
   index.js             signaling (Socket.IO), rooms, seats and host controls
   limits.js            per-address limits
+  store.js             where limits are kept: memory, or Redis with REDIS_URL
   turn.js              TURN credentials from Xirsys, shared for a few minutes
   invite.js            email invites (Gmail API)
   stats.js             live counter for the first page
