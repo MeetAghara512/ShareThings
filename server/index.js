@@ -124,8 +124,17 @@ const ownsSeat = (room, clientId) => !!clientId && (keptSeats(room).some(([id]) 
 // effect(fn) runs fn once the change is saved, for messages to people
 const change = (name, fn) => store.withRoom(name, (room, effect) => {
   expireDue(room, name, effect);
-  return fn(room, effect);
+  const result = fn(room, effect);
+  noteKnown(name, room);
+  return result;
 });
+
+// The last host this copy saw for each room it has people in, so it can set the host back if Redis loses its data
+const knownHosts = new Map();
+const noteKnown = (name, room) => {
+  if (room.host && Object.values(room.members).some(member => member.copy === COPY)) knownHosts.set(name, room.host.key);
+  else knownHosts.delete(name);
+};
 
 // A kept seat whose tab did not come back, or a host who did not come back after a reload. Ended by a timer, or with
 // Redis by whichever copy checks due rooms, so it still ends if the copy that started it has stopped
@@ -252,26 +261,27 @@ function askHost(room, name, socket, tab, typed, resume, ack, effect) {
 
 // The answer to someone waiting, on this copy or, through Redis, on the copy they are connected to
 function answer(request, reply) {
-  if (request.copy !== COPY) return io.serverSideEmit("copy:answer", request.id, reply);
+  if (request.copy !== COPY) return io.serverSideEmit("copy:answer", request.copy, request.id, reply);
   const waiting = pending.get(request.id);
   if (!waiting) return;
   pending.delete(request.id);
   if (waiting.socket.data.request?.id === request.id) waiting.socket.data.request = null;
   waiting.ack(reply);
 }
-io.on("copy:answer", (id, reply) => answer({ id, copy: COPY }, reply));
+// Every other copy hears these; only the one the person is connected to acts
+io.on("copy:answer", (copy, id, reply) => copy === COPY && answer({ id, copy }, reply));
 
 // Let in by the host: the seat is already theirs, the copy they are connected to finishes the join. If they have
 // gone meanwhile, the seat is let go as for a dropped connection
 function admitted(request, name, resumed) {
-  if (request.copy !== COPY) return io.serverSideEmit("copy:enter", request.id, request.socket, name, resumed);
+  if (request.copy !== COPY) return io.serverSideEmit("copy:enter", request.copy, request.id, request.socket, name, resumed);
   const waiting = pending.get(request.id);
   if (!waiting) return loseMembers(name, id => id === request.socket, "transport close").catch(err => console.error("Leave failed:", err.message));
   pending.delete(request.id);
   waiting.socket.data.request = null;
   finishEnter(name, waiting.socket, waiting.ack, { resumed, name: waiting.name, tab: waiting.tab }).catch(err => console.error("Join failed:", err.message));
 }
-io.on("copy:enter", (id, socket, name, resumed) => admitted({ id, socket, copy: COPY }, name, resumed));
+io.on("copy:enter", (copy, id, socket, name, resumed) => copy === COPY && admitted({ id, socket, copy }, name, resumed));
 
 // Stopped waiting: left, disconnected or went to another room. Gone from the host's list
 async function dropRequest(socket) {
@@ -290,7 +300,7 @@ async function dropRequest(socket) {
 // The seat itself, as part of the change that decided to give it
 function claimSeat(room, name, id, tab, typed, resume, copy, effect) {
   const resumed = takeSeat(room, name, id, tab, resume, effect);
-  room.members[id] = { clientId: tab, name: typed, seat: seatOf(tab), copy };
+  room.members[id] = { clientId: tab, name: typed, seat: seatOf(tab), copy, at: Date.now() };
   noteHost(room, tab ?? `socket:${id}`);
   return resumed;
 }
@@ -373,6 +383,7 @@ async function finishEnter(name, socket, ack, { resumed, name: typed, tab }) {
   const iceServers = await getIceServers();
   if (!socket.rooms.has(name) || socket.disconnected) return; // left or disconnected while waiting
   const room = await store.readRoom(name);
+  noteKnown(name, room);
   const peerId = Object.keys(room.members).find(id => id !== socket.id) ?? null;
   const peer = peerId && room.members[peerId];
   const isHost = room.host?.key === tabOf(socket);
@@ -381,19 +392,43 @@ async function finishEnter(name, socket, ack, { resumed, name: typed, tab }) {
   if (isHost) sendRequests(room, name, effect => effect());
 }
 
-// With Redis, a member whose connection closed while Redis could not be reached would stay in the room: this copy
-// checks its own people every few seconds and lets go of those it no longer has, as for a dropped connection
+// With Redis, a member whose connection closed while Redis could not be reached would stay in the room, and so would a
+// seat saved for a join that then failed. This copy checks its own people every few seconds and lets go of those it no
+// longer has, as for a dropped connection (a seat given less than 10 s ago may still be finishing its join)
+const ghost = name => (id, member) => member.copy === COPY &&
+  (!io.sockets.sockets.has(id) || (!io.sockets.sockets.get(id).rooms.has(name) && Date.now() - (member.at || 0) > 10000));
 if (store.shared) {
   setInterval(async () => {
     try {
       for (const name of await store.roomsOf(COPY)) {
-        await loseMembers(name, (id, member) => member.copy === COPY && !io.sockets.sockets.has(id), "transport close", request => request.copy === COPY && !pending.has(request.id));
+        await loseMembers(name, ghost(name), "transport close", request => request.copy === COPY && !pending.has(request.id));
       }
     } catch {
       // Redis is still down; the next round tries again
     }
   }, 10000).unref();
 }
+
+// Back in touch with Redis. A copy that could not reach it for a while may have been taken for stopped, its people
+// turned into kept seats: they never left, so they get their places back before those seats end. If Redis lost its
+// data, this copy puts back everyone it still has (except tabs the room now keeps out), with the host it last knew,
+// and people waiting here are told to ask again, since no host has their request any more
+store.onReconnect(async lost => {
+  for (const socket of io.sockets.sockets.values()) {
+    for (const name of socket.rooms) {
+      if (!name.startsWith(ROOM_PREFIX)) continue;
+      await change(name, room => {
+        if (Object.hasOwn(room.members, socket.id)) return;
+        const tab = socket.data.clientId, key = tabOf(socket);
+        if (tab && room.held[tab]?.id === socket.id) delete room.held[tab];
+        else if (!lost || room.removed.includes(key) || room.denied.includes(key)) return;
+        room.members[socket.id] = { clientId: tab, name: socket.data.name, seat: socket.data.seat, copy: COPY, at: Date.now() };
+        if (!room.host) room.host = { key: knownHosts.get(name) ?? key, awayUntil: 0 };
+      }).catch(err => console.error("Room update failed:", err.message));
+    }
+  }
+  if (lost) for (const [id, waiting] of pending) answer({ id, copy: COPY }, { retry: true });
+});
 
 io.on("connection", socket => {
   let joinCheck = null; // a join that has not taken its seat yet, if any (see room:join)
