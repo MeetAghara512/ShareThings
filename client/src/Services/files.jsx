@@ -643,10 +643,11 @@ const onPause = msg => {
 
 const onResume = msg => {
 	const t = incoming.get(msg.id);
-	if (t?.status !== "paused") return;
+	if (!t?.paused) return;
 	if (!t.pausedByThem) return send({ type: "pause", id: t.id }); // paused here too: it stays until this side resumes
 	t.paused = t.pausedByThem = false;
-	pull(t);
+	// Still reopening its file after a reload: it asks for the rest once the file is open
+	if (t.status === "paused") pull(t);
 };
 
 const onCancel = msg => {
