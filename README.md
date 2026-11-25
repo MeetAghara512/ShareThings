@@ -245,7 +245,7 @@ After that, change these settings in `render.yaml`, not in the Dashboard: a Dash
 
 ## Scaling (optional)
 
-Without `REDIS_URL` the server keeps its rate limits in memory, as before. With `REDIS_URL` set (for example `redis://localhost:6379`), the connection, join, room-check and invite limits are kept in Redis instead, so they survive a server restart. If Redis cannot be reached, calls keep working, limits are not enforced, an error is logged once a minute, and `/health` still answers `200` (saying Redis is down), so the host does not restart the server and cut calls. Rooms and calls still live in one server's memory, so run a single copy for now.
+Without `REDIS_URL` the server keeps its rate limits in memory, as before. With `REDIS_URL` set (for example `redis://localhost:6379`), the connection, join, room-check and invite limits are kept in Redis instead, so they survive a server restart. If Redis cannot be reached, calls keep working, limits are not enforced, an error is logged once a minute, and `/health` still answers `200` (saying Redis is down), so the host does not restart the server and cut calls. With `REDIS_URL`, rooms, seats and hosts are shared too, so several copies can run behind a load balancer without sticky sessions. If Redis is down, calls in progress continue and new calls are refused until it is back. It needs Redis 6.2 or later and does not support Redis Cluster.
 
 ## Privacy
 
